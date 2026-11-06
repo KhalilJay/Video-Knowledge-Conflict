@@ -13,6 +13,7 @@ from urllib.parse import quote
 
 from run_qa_judge import CONDITIONS, GROUPS, MODELS, MODEL_ALIASES, display_command, project_path
 from vconflict_pipeline.common import PipelineError, utc_now
+from vconflict_pipeline.paths import model_output_dir
 from vconflict_pipeline.result_rules import (
     expand_thinking_efforts,
     qa_result_based,
@@ -143,7 +144,7 @@ def collect_reports(experiment: Experiment, stdout: str) -> list[dict]:
     if (len(summary_paths) != len(experiment.efforts)
             or len(set(summary_paths)) != len(summary_paths) or len(report_paths) != 1):
         raise PipelineError("Native summarize did not announce all expected JSON/Markdown reports")
-    parent = (RESULTS_DIR / experiment.group / QA_MODEL_SLUGS[experiment.qa_model]).resolve()
+    parent = model_output_dir(RESULTS_DIR / experiment.group, QA_MODEL_SLUGS[experiment.qa_model]).resolve()
     report_path = report_paths[0]
     for path in [*summary_paths, report_path]:
         if path.parent != parent or not path.is_file():
@@ -236,7 +237,7 @@ def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--model", default="all", choices=("all", *MODELS),
                         type=lambda value: MODEL_ALIASES.get(value, value),
-                        help="all includes all seven cloud/local models; aliases: cosmos, gemma.")
+                        help="all includes all ten cloud/local models; aliases: cosmos (cosmos3-nano), gemma.")
     parser.add_argument("--group", action="append", choices=GROUPS)
     parser.add_argument("--condition", action="append", choices=tuple(CONDITIONS))
     parser.add_argument("--dataset-dir", type=Path, default=Path("dataset/cases"))

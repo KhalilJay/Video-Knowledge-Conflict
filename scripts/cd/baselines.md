@@ -15,7 +15,7 @@ torchvision、OpenCV 和 Pillow。模型标识与缓存解析方式见 [VCD](vcd
 |---|---:|---:|
 | qwen | 1 fps | 0.5 fps |
 | gemma | 1 fps | 0.5 fps |
-| cosmos | 4 fps | 1 fps |
+| cosmos3-nano | 4 fps | 1 fps |
 
 采样值集中定义于 `contrastive_common/sampling.py`，预处理、配置预览与指纹读取同一份
 配置。`--positive-fps` 已移除，不能再统一覆盖所有模型。
@@ -31,11 +31,13 @@ QA 的 `sampling` 审计记录各分支请求 FPS、源 FPS、原始帧索引、
 ## 独立入口
 
 ```bash
-python scripts/cd/tcd/run.py --models qwen cosmos gemma --gpus all --based
-python scripts/cd/season/run.py --models qwen cosmos gemma --gpus all --based
+python scripts/cd/tcd/run.py --models qwen cosmos3-nano gemma --gpus all --based
+python scripts/cd/season/run.py --models qwen cosmos3-nano gemma --gpus all --based
 ```
 
 每个入口固定对应方法，不接受切换方法。`--models` 选择 1–3 个不同模型。
+Nano 的旧别名 `cosmos`、旧结果目录及指纹仍兼容；命名与 VCD 一致。
+Cosmos3-Super 本次仅接入主 pipeline 和 VCD，不在 TCD/SEASON 可选模型中。
 默认 `batch-size=auto`、`max-batch-size=32`、based 关闭、执行 QA → Judge。
 输出分别为 `results/tcd/<model>/` 和 `results/season/<model>/`；`--output` 覆盖方法结果根目录。
 数据筛选、Judge 参数及生成预算与 [VCD](vcd/vcd.md#单次运行) 相同。
@@ -48,7 +50,7 @@ python scripts/cd/run_baselines.py --dry-run
 python scripts/cd/run_baselines.py
 
 # 显式选择模型、方法和参数
-python scripts/cd/run_baselines.py --models cosmos --methods tcd --gpus 1 --no-based
+python scripts/cd/run_baselines.py --models cosmos3-nano --methods tcd --gpus 1 --no-based
 
 # 运行 QA 与 Judge；或单独补 Judge / 重建报告
 python scripts/cd/run_baselines.py --qa-judge
@@ -66,7 +68,7 @@ python scripts/cd/run_baselines.py --batch-size auto --max-batch-size 32 --autot
 
 | 参数 | 默认值 / 行为 |
 |---|---|
-| `--models` | baseline 默认 `qwen cosmos gemma`；独立入口必填 |
+| `--models` | baseline 默认 `qwen cosmos3-nano gemma`；独立入口必填 |
 | `--methods` | 仅 baseline 支持，默认 `tcd season` |
 | `--batch-size` / `--max-batch-size` | baseline 为 `4` / `4`；独立入口为 `auto` / `32` |
 | `--based` / `--no-based` | baseline 默认开启；独立入口默认关闭 |

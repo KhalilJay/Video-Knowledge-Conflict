@@ -1,5 +1,7 @@
-"""Token-sequence reasoning boundaries and budget control for all three models."""
+"""Token-sequence reasoning boundaries and budget control for each processing family."""
 from __future__ import annotations
+
+from .models import processing_family
 
 BOUNDARIES = {
     "cosmos": ("<think>", "</think>"),
@@ -10,6 +12,7 @@ BOUNDARIES = {
 
 def suppressed_tokens(tokenizer, *, family, thinking, continuation=False):
     """Resolve Cosmos tag IDs from this tokenizer; never rewrite its vocabulary."""
+    family = processing_family(family)
     if family != 'cosmos' or (thinking and not continuation):
         return []
     result = []
@@ -36,7 +39,7 @@ class ReasoningControl:
     """Count only an open reasoning span; force every token of its closing marker."""
 
     def __init__(self, tokenizer, prompt_ids, *, family, budget):
-        start, end = BOUNDARIES[family]
+        start, end = BOUNDARIES[processing_family(family)]
         self.start = tokenizer.encode(start, add_special_tokens=False)
         self.end = tokenizer.encode(end, add_special_tokens=False)
         if not self.start or not self.end:

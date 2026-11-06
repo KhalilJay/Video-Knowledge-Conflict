@@ -154,7 +154,7 @@ class Engine:
                 if local:
                     try:
                         task.final_answer_continuation = prepare_final_answer_continuation(
-                            exc, self.execution.backend.service)
+                            exc, self.execution.backend.service, qa_model=self.args.qa_model)
                     except PipelineError as continuation_error:
                         self.fail(task, continuation_error)
                         return

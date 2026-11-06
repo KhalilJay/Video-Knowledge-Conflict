@@ -13,17 +13,18 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
 from cd.contrastive_common import GENERATION_PROTOCOLS, SCHEMA_VERSION
 from cd.contrastive_common.cli import validate
-from cd.contrastive_common.config import FAMILIES, WorkerConfig
+from cd.contrastive_common.config import WorkerConfig
 from cd.contrastive_common.core import validate_parameters
 from cd.contrastive_common.launcher import (
     add_queue_options, gpu_indices, load_status, new_run, preflight, preview, supervise,
     validate_models, validate_root,
 )
-from cd.contrastive_common.models import MODELS, resolve_model
+from cd.contrastive_common.models import MODELS, VCD_MODELS, canonical_model, resolve_model
 from cd.contrastive_common.storage import (
     GROUPS, atomic_json, digest_json, output_lock, read_json, select_sources, validate_output,
 )
 from vconflict_pipeline.common import PipelineError, utc_now
+from vconflict_pipeline.paths import model_output_dir
 from vconflict_pipeline.settings import AUTHOR_JUDGE_MODEL, DEFAULT_CASE_DIR, PROJECT_ROOT
 
 QUOTAS = dict(zip(GROUPS, (25, 25, 25, 7)))
@@ -50,7 +51,7 @@ def parser():
                         help='Omit grounding only from the question branch; use a separate output root')
     result.add_argument('--selection-from', type=Path,
                         help='Reuse another selection.json sample without copying its QA/Judge results')
-    add_queue_options(result)
+    add_queue_options(result, model_choices=VCD_MODELS)
     result.add_argument('--smoke-first', action='store_true',
                         help='Require one-question QA + Judge on every selected model before the full batch')
     result.add_argument('--summarize-only', action='store_true',
@@ -120,8 +121,15 @@ def read_selection(path, parameters=None):
         raise ValueError('Incompatible frozen batch configuration; choose a separate output root')
     if (not isinstance(manifest.get('tasks'), list) or not manifest['tasks']
             or not isinstance(manifest.get('models'), dict) or not manifest['models']
-            or not set(manifest['models']).issubset(FAMILIES)):
+            or not {canonical_model(model) for model in manifest['models']}.issubset(VCD_MODELS)):
         raise ValueError('Incomplete selection.json; refusing to reconstruct a frozen sample')
+    models = {}
+    for name, model in manifest['models'].items():
+        name = canonical_model(name)
+        if name in models:
+            raise ValueError('Duplicate Nano model identities in selection.json')
+        models[name] = model
+    manifest['models'] = models
     groups = manifest['groups']
     if list(groups) != list(GROUPS) or any(
             len(groups[g]) != QUOTAS[g] or groups[g] != sorted(set(groups[g])) for g in GROUPS):
@@ -186,7 +194,7 @@ def selection(output, *, models, beta=PARAMETERS['beta'], based=True, disable_th
         if family in manifest['models'] and manifest['models'][family] != model:
             raise ValueError(f'Cached {family} model path changed; restore it or choose a separate output root')
         manifest['models'][family] = model
-        validate_output(output / family)
+        validate_output(model_output_dir(output, family))
     manifest['tasks'] = expected
     manifest['counts'] = {group: {
         'cases': len(ids),
@@ -200,12 +208,12 @@ def worker_configs(args, manifest, *, smoke=False):
     configs = []
     for family in args.models:
         config = replace(
-            batch_config(family, manifest['parameters']), output=args.output_root / family,
+            batch_config(family, manifest['parameters']), output=model_output_dir(args.output_root, family),
             dataset_dir=Path(manifest['dataset_dir']), model_path=manifest['models'][family]['model_path'],
             group=list(manifest['groups']),
             case_id=[case_id for ids in manifest['groups'].values() for case_id in ids],
             summarize_only=args.summarize_only,
-            max_token_log=args.output_root / family / 'logs' / 'truncation.jsonl')
+            max_token_log=model_output_dir(args.output_root, family) / 'logs' / 'truncation.jsonl')
         if smoke:
             first = manifest['tasks'][0]
             config = replace(config, group=[first['group']], case_id=[first['case_id']],
@@ -229,7 +237,7 @@ def main(argv=None):
     args = parser().parse_args(argv)
     args.output_root = args.output_root.expanduser().resolve()
     try:
-        validate_models(args.models)
+        validate_models(args.models, model_choices=VCD_MODELS)
         validate_parameters(PARAMETERS['alpha'], args.beta)
         validate_root(args.output_root)
         if args.selection_from is not None:

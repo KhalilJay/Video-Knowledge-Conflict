@@ -38,6 +38,7 @@ $env:MOONSHOT_API_KEY = "<key>"
 | `COSMOS_BASE_URL` | `http://127.0.0.1:8000/v1` |
 | `GEMMA_BASE_URL` | `http://127.0.0.1:8001/v1` |
 | `QWEN38_BASE_URL` | `http://127.0.0.1:8002/v1` |
+| `QWEN3_VL_BASE_URL` | `http://127.0.0.1:8003/v1` |
 
 云端 Qwen 地址须使用 HTTPS。下文命令采用 Bash 换行语法；PowerShell 中可写成单行。
 
@@ -180,11 +181,25 @@ QA 及其中的 Judge 历史；保留其他视频的历史、共享问题及其 
 | `qwen3.8-max` | `none`、`default` | 24 / 24 | 服务配置 |
 | `kimi-k3` | `default` | 24 / 24 | 服务配置 |
 | `cosmos3-nano` | `none`、`default` | 8 / 8 | `--cosmos-max-tokens 8192` |
+| `cosmos3-super` | `none`、`default` | 8 / 8 | `--cosmos-max-tokens 8192` |
 | `gemma4` | `none`、`default` | 4 / 4 | `--gemma-max-tokens 8192` |
 | `qwen3.8-27b` | `none`、`default` | 1 / 1 | `--qwen38-max-tokens 8192` |
+| `qwen3-vl-32b-instruct` | 仅 `none` | 1 / 1 | `--qwen3-vl-max-tokens 8192` |
+| `qwen3-vl-32b-thinking` | 仅 `default` | 1 / 1 | `--qwen3-vl-max-tokens 8192` |
 
-省略 effort 使用 `default`；`all` 执行模型支持的全部 effort，也可重复指定该选项。
+省略 effort 时 Qwen3-VL Instruct 使用 `none`，其余模型使用 `default`；
+`all` 执行模型支持的全部 effort，也可重复指定该选项。两个 Qwen3-VL 模型的
+`all` 各执行一次，显式选择不支持的 effort 报错。
 模型 ID、温度和视频采样协议见 [plan.md](plan.md#模型配置与采样协议)。
+
+Qwen3-VL 两个模型的准确持久化 ID 为 `Qwen/Qwen3-VL-32B-Instruct` 和
+`Qwen/Qwen3-VL-32B-Thinking`，报告目录分别为 `qwen3_vl_32b_instruct` 和
+`qwen3_vl_32b_thinking`。两者固定 temperature=0、seed=0，视频 1 fps；使用 user
+消息，不额外添加 system prompt，保留原问题、based、作品名前缀和 `Final answer:`
+要求。首次请求不发送 `enable_thinking`、`reasoning_effort=xhigh` 或人为思考格式
+指令；Thinking 的[官方模板](https://huggingface.co/Qwen/Qwen3-VL-32B-Thinking/blob/main/chat_template.json)
+固定开启思考。实验 temperature=0 与[模型卡](https://huggingface.co/Qwen/Qwen3-VL-32B-Thinking#generation-hyperparameters)
+推荐的 temperature=1 不同。
 
 默认 QA 模型仍为 `gemini-3.1-pro`。Argon 使用独立的 `google/gemini-4-argon` 模型 ID，
 显式发送 reasoning medium 和 `temperature: 0`，省略 top_p、top_k；结果保存
@@ -198,13 +213,17 @@ python scripts/pipeline.py summarize --group real_world_commonsense_conflicts \
   --input video --qa-model gemini-4-argon
 ```
 
+Cosmos3-Nano 和 Cosmos3-Super 共用 `COSMOS_BASE_URL`、`--cosmos-max-tokens` 及
+全部采样、thinking 和恢复参数；下文 Cosmos 指两者。持久化模型 ID 分别为
+`nvidia/Cosmos3-Nano` 和 `nvidia/Cosmos3-Super`，结果与筛选身份独立。
+
 Cosmos `none` 在四种输入的请求顶层发送
 `"bad_words": ["<think>", "</think>"]`，由服务端在生成阶段屏蔽标签；提示词仅保留
 原问题、适用的输入条件和 `Final answer:` 格式要求，移除原有不使用 think 标签的
 提示句。屏蔽标签不保证没有推理文字。`default` 保持原推理提示且不发送 `bad_words`。
 历史结果仍可复用；需要采用新协议重新实验时，使用现有 `--force-qa`。
 
-三个本地模型默认总输出预算为 8192（含推理和正文），默认
+六个本地模型默认总输出预算为 8192（含推理和正文），默认
 `--thinking-token-budget 6144`。该正整数参数仅在本地实际 effort 为 `default` 时作为
 顶层 `thinking_token_budget` 发送，并须严格小于所选模型的 `--*-max-tokens`；
 `none` 不发送，`all` 按每个任务的 effort 处理，云端模型忽略该预算。
@@ -214,26 +233,35 @@ Qwen27B 从 32768 调整到 8192，与默认服务端输出上限一致。
 本地服务启动脚本在 Linux/Bash、Conda 和兼容的 vLLM 环境中运行：
 
 ```bash
-bash scripts/start_cosmos_vllm.sh
+bash scripts/start_cosmos_nano_vllm.sh
+# 切换至 Super：先停止 Nano 服务，再启动以下脚本；二者默认均使用端口 8000
+bash scripts/start_cosmos_super_vllm.sh
 bash scripts/start_gemma4_vllm.sh
 bash scripts/start_qwen38_vllm.sh
+# Qwen3-VL 默认 Instruct；与 Thinking 共用端口 8003，切换前先停止当前服务
+bash scripts/start_qwen3_vl_vllm.sh
+QWEN_MODEL=Qwen/Qwen3-VL-32B-Thinking bash scripts/start_qwen3_vl_vllm.sh
+# 自定义本地目录必须显式标明版本
+QWEN_MODEL=/实际模型目录 QWEN_VARIANT=thinking bash scripts/start_qwen3_vl_vllm.sh
 # Gemma 仅查看启动命令
 DRY_RUN=1 bash scripts/start_gemma4_vllm.sh
 # Qwen27B dry-run 无需激活 Conda 或安装 vLLM
 DRY_RUN=1 bash scripts/start_qwen38_vllm.sh
+DRY_RUN=1 QWEN_MODEL=Qwen/Qwen3-VL-32B-Thinking bash scripts/start_qwen3_vl_vllm.sh
 # 提高客户端总预算时，同步提高对应服务的上限并重启
 MAX_OUTPUT_TOKENS=16384 bash scripts/start_qwen38_vllm.sh
 ```
 
-三个启动脚本均接受 `MAX_OUTPUT_TOKENS` 正整数，默认 8192，通过
+五个启动脚本均接受 `MAX_OUTPUT_TOKENS` 正整数，默认 8192，通过
 `--override-generation-config` 设置服务端输出上限。提高客户端 `--*-max-tokens` 时，
 也需提高此上限，并保证输入 token（含视频）与输出能放入服务端上下文。
 本次更新增加 `--reasoning-config`，必须用更新后的脚本重启已有服务。
-Cosmos 和 Qwen 使用 `<think>` / `</think>`，Gemma 使用
+Cosmos、Qwen27B 和 Qwen3-VL Thinking 使用 `<think>` / `</think>`，Gemma 使用
 `<|channel>thought\n` / `<channel|>`（`\n` 是实际换行）；达到推理预算时只注入结束
 标记，继续自然生成正文。Cosmos 保留无 parser 模式，Gemma/Qwen 分别保留
 `gemma4` / `qwen3` parser；具体配置和 vLLM 0.29.0 实现依据见
 [plan.md](plan.md#模型配置与采样协议)。
+Qwen3-VL Instruct 不启用 parser，不发送思考预算或思考边界配置。
 
 Cosmos 默认激活 `vllm` 环境、GPU 0 单卡、BF16、端口 8000、`MAX_NUM_SEQS=4`。
 `VIDEO_ROOT` 默认仓库 `videos/`，`TENSOR_PARALLEL_SIZE`、`CUDA_VISIBLE_DEVICES`、
@@ -253,17 +281,29 @@ Qwen27B 默认 `vllm` 环境、GPU 0 单卡、BF16、65536 上下文、`MAX_NUM_
 默认 `HF_HUB_OFFLINE=1`，也可覆盖 `HF_HOME` / `HF_HUB_CACHE`；默认只从已有缓存
 加载。所有脚本默认 `HF_HOME=/cache/huggingface`，接受追加的 vLLM 参数。
 
+Qwen3-VL 默认 `vllm` 环境、GPU 0 单卡、BF16、16384 上下文、`MAX_NUM_SEQS=32`、
+输出上限 8192、端口 8003，沿用 Qwen27B 的部署覆盖项和 HF 缓存设置。
+标准 `QWEN_MODEL` ID 自动识别 Instruct/Thinking；自定义路径必须设置
+`QWEN_VARIANT=instruct|thinking`，未知版本或与标准 ID 冲突时直接报错。
+对外服务名固定为对应官方 ID，不能通过追加 `--served-model-name` 覆盖。
+Thinking 自动加入 `--reasoning-parser qwen3` 及 `<think>` / `</think>` 边界；
+Instruct 不加入 parser，两者均不在服务端设置 thinking 模式开关。
+
 视频必须是服务端可读且位于允许媒体目录内的 MP4。服务端口改变后同步配置
-`COSMOS_BASE_URL` / `GEMMA_BASE_URL` / `QWEN38_BASE_URL`；Qwen27B 默认
+`COSMOS_BASE_URL` / `GEMMA_BASE_URL` / `QWEN38_BASE_URL` / `QWEN3_VL_BASE_URL`；Qwen27B 默认
 `http://127.0.0.1:8002/v1`。预检从 `/v1/models` 获取实际模型 ID，持久化实验 ID
 始终为 `Qwen/Qwen3.8-27B`。整条 pipeline 与 vLLM 在同一服务器运行。
+Qwen3-VL 共用端口 8003，由用户手动切换权重；预检要求 `/v1/models` 包含所选模型
+的准确官方 ID，不接受“只有一个模型就使用该 ID”的回退，避免切换后错误归档。
+其他本地模型的原有预检行为保持不变。
 Description 与独立 question-only 实验都只用文本，`TEXT_ONLY=1` 同时适用于二者。
 
-Gemma、本地 Qwen27B 和云端 Qwen Max 的 video/control 均按 1 FPS 采样。
+Gemma、本地 Qwen27B、两个 Qwen3-VL 和云端 Qwen Max 的 video/control 均按 1 FPS 采样。
 Gemma 客户端与启动脚本设置 `media_io_kwargs.video.fps=1`、`num_frames=-1`，
-由加载器采样一次，取消固定 32 帧上限；本地 Qwen27B 加载器保留原始帧，
+由加载器采样一次，取消固定 32 帧上限；本地 Qwen27B 和两个 Qwen3-VL 加载器使用
+`opencv/num_frames=-1/fps=-1` 保留原始帧，
 客户端与启动脚本设置 `mm_processor_kwargs.fps=1`，由模型处理器采样一次，
-保留原有帧数边界；Qwen Max 视频内容项设置 `fps=1`。
+并设置 `do_sample_frames=true`，保留原有帧数边界；Qwen Max 视频内容项设置 `fps=1`。
 Description 和 question-only 请求不携带视频采样参数。完整参数见
 [plan.md](plan.md#模型配置与采样协议)。更新服务端采样默认值需要重启对应服务；
 已有历史结果仍可复用，需要统一采样协议时使用 `--force-qa` 重跑所选范围。
@@ -275,10 +315,21 @@ python scripts/pipeline.py qa-judge --group classic_fairy_tale_film_conflicts \
   --input description --qa-model qwen3.8-max --thinking-effort all
 python scripts/pipeline.py qa-judge --group real_world_commonsense_conflicts \
   --input question_only --qa-model qwen3.8-max --thinking-effort all
+# Cosmos3-Super 沿用 Nano 的参数；先将 8000 端口的服务切换为 Super 权重
+python scripts/pipeline.py qa-judge --group real_world_commonsense_conflicts \
+  --input video --qa-model cosmos3-super --thinking-effort all \
+  --cosmos-max-tokens 8192 --thinking-token-budget 6144
 # 本地模型显式预算示例；也适用于 control、description、question_only
 python scripts/pipeline.py qa-judge --group real_world_commonsense_conflicts \
   --input video --qa-model qwen3.8-27b --thinking-effort all \
   --qwen38-max-tokens 8192 --thinking-token-budget 6144
+# Qwen3-VL Instruct 省略 effort 即为 none；确认当前 8003 服务为 Instruct
+python scripts/pipeline.py qa-judge --group real_world_commonsense_conflicts \
+  --input video --qa-model qwen3-vl-32b-instruct
+# 切换到 Thinking 服务后运行；同样支持 control、description、question_only
+python scripts/pipeline.py qa-judge --group real_world_commonsense_conflicts \
+  --input video --qa-model qwen3-vl-32b-thinking \
+  --qwen3-vl-max-tokens 8192 --thinking-token-budget 6144
 ```
 
 `--input` 默认 `video`，执行与汇总使用相同的角色选择：
@@ -383,6 +434,8 @@ python scripts/run_all/run_qa_judge.py --dry-run
 python scripts/run_all/run_qa_judge.py
 python scripts/run_all/run_qa_judge.py --model gemini-3.1-pro
 python scripts/run_all/run_qa_judge.py --model gemini-4-argon --dry-run
+python scripts/run_all/run_qa_judge.py --model qwen3-vl-32b-instruct --dry-run
+python scripts/run_all/run_qa_judge.py --model qwen3-vl-32b-thinking --dry-run
 ```
 
 统一使用 `run_qa_judge.py`，省略 `--model` 等同于 `--model all`。
@@ -391,12 +444,15 @@ python scripts/run_all/run_qa_judge.py --model gemini-4-argon --dry-run
 单独选择 Argon 默认生成 16 条命令，不包含 control 或 question_only。
 保留模型、effort 和 Fairy video 的作品名前缀设置：Qwen Max 使用 all effort，
 Gemini 3.1 Pro、Argon、Kimi 使用 default。也可用 `--model` 选择单个云端或本地模型；本地模型使用
-all effort。`--group`、`--condition` 可重复指定。
+all effort，Qwen3-VL Instruct 例外使用 none、Thinking 使用 default，各执行一次。
+Qwen3-VL 不加入 QA 批量入口的 `--model all`，须手动切换服务后显式选择。
+`--group`、`--condition` 可重复指定。
 
 批量脚本固定读取同目录的 `run_all_qa_judge_config.json`；调整并发、RPM、超时或
-网络重试次数时直接修改该文件，不支持外部配置路径。配置必须包含全部七个模型及
+网络重试次数时直接修改该文件，不支持外部配置路径。配置必须包含全部十个模型及
 规定字段，缺失、未知字段或无效数值直接报错，不自动补齐模型。
-仓库自带配置将 Judge、OpenRouter、所有模型的 QA 任务及共享 QA 服务并发统一为 32；
+仓库自带配置将 Judge、OpenRouter 和所有共享 QA 服务并发设为 32；QA 任务并发除
+Cosmos3-Super 为 4 外均为 32，两个 Qwen3-VL 模型沿用 Qwen27B 的 32 / 32 配置。
 云端 QA、Judge 和 OpenRouter 为 60 RPM，本地 QA 为 0 RPM，`max_retries` 为 3。
 这些批量配置不改变直接运行 `pipeline.py qa-judge` 时的默认值和命令行参数。
 
@@ -412,7 +468,7 @@ Summary 不保存逐 case 进度、回答、判定、逐命令日志、配置快
 
 #### 保存本地模型的截断回答
 
-选择 `--model cosmos3-nano`、`gemma4` 或 `qwen3.8-27b` 时，每次批量运行指定
+选择任一本地模型（含两个 Qwen3-VL 模型）时，每次批量运行指定
 `results/run_all/max_token/<本次运行ID>.jsonl`，运行 ID 与该次 summary 的目录名
 相同。指定 `--log-dir` 时使用其下的 `max_token/`。同次运行的全部 group、condition
 和 effort 共用这一绝对路径，下一次运行使用新文件；启动时在终端和 summary 中
@@ -471,12 +527,14 @@ python scripts/run_all/run_all_summarize.py --dry-run
 该脚本扫描四个 group（含 math）中 conflict 视频已保存的目标 QA，覆盖 video、
 video + based、description、description + based；Fairy video 只选择有作品名前缀的
 记录。未产生目标 QA 的组合跳过，支持部分完成的实验。`--model all` 为默认值，
-在此汇总入口中包含 Gemini 3.1 Pro、Gemini 4 Argon、Qwen Max、Kimi、Cosmos、Gemma、Qwen27B 全部七个
-模型。Qwen Max 和三个本地模型分别发现 none/default，Gemini 3.1 Pro 的历史 medium
+在此汇总入口中包含 Gemini 3.1 Pro、Gemini 4 Argon、Qwen Max、Kimi、Cosmos3-Nano、
+Cosmos3-Super、Gemma、Qwen27B、Qwen3-VL Instruct/Thinking 全部十个模型。
+Qwen Max 和原有四个本地模型分别发现 none/default，Qwen3-VL Instruct 仅发现 none、
+Thinking 仅发现 default；两者结果独立。Gemini 3.1 Pro 的历史 medium
 归一化为 default；Argon 仅发现 default，与 Gemini 3.1 Pro 的结果独立。
 每个组合仅将实际保存过 QA 的 effort 显式传给原生 summarize。
 
-支持 `--model`（含 `cosmos` / `gemma` 别名）、可重复的 `--group` / `--condition`、
+支持 `--model`（含 `cosmos` → `cosmos3-nano`、`gemma` 别名）、可重复的 `--group` / `--condition`、
 `--dataset-dir` 和 `--summary-workers`（默认 4）。相对数据路径以仓库根目录为基准。
 `--dry-run` 只展示发现的组合及命令，不写报告、不调用模型。实际汇总也只处理已有
 记录，不执行 QA/Judge 请求。使用自定义数据目录时，输出仍写入仓库的 results 目录。
@@ -526,8 +584,12 @@ effort 通过的题目集合可能不同。缺失、过期、未判分或判错�
 报告可能尚不完整。`--summary-workers` 默认 4，输出位置由程序确定。
 
 省略 effort 或使用 `all` 时，只汇总已有判定中实际存在的 effort；没有结果则生成
-默认 effort 的空 summary。每个 effort 一份 JSON，不同 effort 合并到一份 Markdown。
-模型目录名为 `gemini3_1_pro`、`gemini4_argon`、`qwen`、`kimi`、`cosmos`、`gemma`、`qwen38_27b`。
+默认 effort 的空 summary（Qwen3-VL Instruct 为 none，其余模型为 default）。
+每个 effort 一份 JSON，不同 effort 合并到一份 Markdown。模型目录名为
+`gemini3_1_pro`、`gemini4_argon`、`qwen`、`kimi`、`cosmos_nano`、`cosmos_super`、
+`gemma`、`qwen38_27b`、`qwen3_vl_32b_instruct`、`qwen3_vl_32b_thinking`。
+Nano 的旧 `cosmos` 命令别名仍接受；若已有组结果仅含 `cosmos/`，继续在该目录写入
+完整名称的报告；新建结果使用 `cosmos_nano/`。两种目录同时存在时报错，程序不自动合并或搬迁。
 已有 `gemini` 报告目录保留，重新汇总 Gemini 3.1 Pro 时写入新目录和文件名前缀。例如：
 
 ```text
@@ -597,6 +659,10 @@ reasoning 按 `reasoning`、`reasoning_content` 顺序选择非空字段，原�
 前缀。请求设置 `continue_final_message=true`、`add_generation_prompt=false`、
 `echo=false`、`max_tokens=256`，保留原采样、thinking 开关及媒体参数，移除
 `thinking_token_budget`。不裁剪输入或首次回答，上下文不足直接报告服务端错误。
+仅 Qwen3-VL Thinking 的续写增加 `chat_template_kwargs.enable_thinking=false`：
+已验证 vLLM 0.29.0 默认 parser 会将纯答案后缀放入 reasoning，此参数使其进入
+content。该模型官方模板不读取该参数，续写模板保持不变；它是解析兼容处理，
+不是关闭模型思考或禁止标签。Instruct 和已有模型均不增加这一兼容参数。
 
 将预填的 assistant 正文和实际返回后缀原样拼接，再按末行规则提取 `final_answer`。
 只有第二次有效才保存 QA 并进入 Judge，结果增加 `final_answer_retry_count: 1`；
@@ -615,16 +681,18 @@ reasoning 按 `reasoning`、`reasoning_content` 顺序选择非空字段，原�
 ### 本地推理预算验收
 
 以下步骤须在部署环境逐模型完成。静态语法检查、CLI 校验和 HTTP 成功均不能代替
-强制结束推理的实际验证；三个模型全部通过后才开始批量实验。
+强制结束推理的实际验证；所有支持思考的本地模型通过后才开始批量实验。
 
 1. 用更新后的脚本重启 vLLM 0.29.0 服务。以小预算（例如
    `--thinking-token-budget 64`）、足够的总预算和能产生较长推理的问题触发强制结束。
    结合 tokenizer、原始输出或服务端日志，确认推理结束边界被强制注入且正文继续生成，
    最终仍满足 `Final answer:` 规则。Gemma/Qwen 的 parser 会分离 reasoning 与正文，
    仅看正文或 token 使用量不能证明强制注入。
-2. 分别验证自然提前结束、默认 6144、`none` 和 `all`，覆盖纯文字与真实视频请求。
+2. 分别验证自然提前结束、默认 6144 及模型支持的 `none` / `default` 和 `all`，覆盖纯文字与真实视频请求。
    `none` 请求应无预算字段，`all` 中仅 default 任务发送；保留原有采样、视频处理和
-   Qwen `xhigh` 参数。服务拒绝预算时应报告失败，不应去掉预算继续请求。
+   Qwen27B `xhigh` 参数；Qwen3-VL 首次请求不发送 thinking 开关或 xhigh。
+   Instruct 仅 none、Thinking 仅 default，all 各执行一次。服务拒绝预算时应报告失败，
+   不应去掉预算继续请求。
 3. 用少量现有样本分别运行 video、control、description、question_only，检查实际
    请求和新结果中的预算字段及 Judge 流程。本地缺失答案或首次截断按上述协议续写
    一次，固定 256-token 预算且不发送 thinking budget；
@@ -649,7 +717,9 @@ python scripts/pipeline.py qa-judge --case-id existing-case-id \
 在 `continue_final_message=true`、`add_generation_prompt=false` 下，最终 prompt 停在
 开放的 assistant `Final answer:` 前缀，未追加结束 token 或新的 assistant turn。
 分别覆盖空正文、独立 reasoning、正常恢复、再次格式失败、首次截断后恢复和续写截断；
-包含 none/default effort 与 video/control/description/question_only 输入。
+包含各模型支持的 effort 与 video/control/description/question_only 输入。
+Qwen3-VL Thinking 另核对续写的解析兼容参数仅作用于 parser，后缀进入 content，
+Instruct 和 Qwen27B 等已有模型的续写协议保持原样。
 
 检查每次续写重新申请并发/RPM，网络错误重发同一请求且重试额度不重置，服务端
 上下文不足时报告错误。核对成功结果的拼接正文、审计对象、第二次 usage/请求 ID

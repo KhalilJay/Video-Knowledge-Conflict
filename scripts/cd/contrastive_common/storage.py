@@ -241,8 +241,15 @@ def records_for(case, target, field='qa_results'):
 
 
 def matching_records(case, target, binding, field='qa_results'):
+    keys = {binding['qa_key']}
+    if binding['model_family'] == 'cosmos3-nano':
+        # Renaming Nano must not change the meaning of an otherwise identical
+        # historical request. Keep its stored hash and all other binding fields.
+        legacy = {key: value for key, value in binding.items() if key != 'qa_key'}
+        legacy['model_family'] = 'cosmos'
+        keys.add(digest_json(legacy))
     return [r for r in records_for(case, target, field)
-            if r.get('method') == binding['method'] and r.get('qa_key') == binding['qa_key']]
+            if r.get('method') == binding['method'] and r.get('qa_key') in keys]
 
 
 def current_qa(case, target, binding):

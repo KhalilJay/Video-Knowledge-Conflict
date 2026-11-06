@@ -13,14 +13,16 @@ import uuid
 from pathlib import Path
 
 from vconflict_pipeline.common import utc_now
-from .config import FAMILIES
+from .models import DEFAULT_MODELS, canonical_model
 from .storage import atomic_json, make_config, read_json
 
 
-def add_queue_options(parser, *, required_models=False):
-    parser.add_argument('--models', nargs='+', choices=FAMILIES, required=required_models,
-                        default=None if required_models else list(FAMILIES),
-                        help='One to three distinct models, queued in the given order')
+def add_queue_options(parser, *, required_models=False, model_choices=DEFAULT_MODELS):
+    parser.add_argument('--models', nargs='+', type=canonical_model, choices=model_choices,
+                        required=required_models,
+                        default=None if required_models else list(DEFAULT_MODELS),
+                        help=f'One to {len(model_choices)} distinct models, queued in the given order; '
+                             'legacy alias cosmos means cosmos3-nano')
     parser.add_argument('--gpus', choices=('0', '1', 'all'), default='all',
                         help='Physical GPU 0, 1, or both (default: all); one model per GPU')
     parser.add_argument('--disable-thinking', action='store_true',
@@ -29,9 +31,12 @@ def add_queue_options(parser, *, required_models=False):
                         help='Read-only model order, initial GPU assignment and configuration preview')
 
 
-def validate_models(models):
-    if not 1 <= len(models) <= 3 or len(set(models)) != len(models):
-        raise ValueError('--models requires one to three distinct models')
+def validate_models(models, *, model_choices=DEFAULT_MODELS):
+    models[:] = [canonical_model(model) for model in models]
+    if (not 1 <= len(models) <= len(model_choices) or len(set(models)) != len(models)
+            or not set(models).issubset(model_choices)):
+        raise ValueError(f'--models requires one to {len(model_choices)} distinct models '
+                         f'from {", ".join(model_choices)}')
 
 
 def gpu_indices(choice, model_count):

@@ -23,7 +23,7 @@ from .settings import (
     CLI_QA_MODELS,
     CLI_QA_MODEL_IDS,
     CLI_THINKING_EFFORTS,
-    COSMOS_QA_MODEL,
+    COSMOS_QA_MODELS,
     DEFAULT_CASE_DIR,
     DEFAULT_CASE_WORKERS,
     DEFAULT_COSMOS_MAX_TOKENS,
@@ -32,6 +32,8 @@ from .settings import (
     DEFAULT_GEMMA_WORKERS,
     DEFAULT_QWEN38_MAX_TOKENS,
     DEFAULT_QWEN38_WORKERS,
+    DEFAULT_QWEN3_VL_MAX_TOKENS,
+    DEFAULT_QWEN3_VL_WORKERS,
     DEFAULT_QA_MODEL,
     DEFAULT_REQUEST_RPM,
     DEFAULT_REQUEST_WORKERS,
@@ -41,6 +43,7 @@ from .settings import (
     FAIRY_TALE_GROUP,
     GEMMA_QA_MODEL,
     QWEN38_QA_MODEL,
+    QWEN3_VL_QA_MODELS,
     SEEDANCE_MODEL,
 )
 
@@ -64,6 +67,8 @@ def _entity_id(value: str) -> str:
 
 
 def _qa_model(value: str) -> str:
+    if value == "cosmos":
+        value = "cosmos3-nano"
     try:
         return CLI_QA_MODEL_IDS[value]
     except KeyError as exc:
@@ -224,6 +229,7 @@ def build_parser() -> argparse.ArgumentParser:
     qa_judge.add_argument("--cosmos-max-tokens", type=int, default=DEFAULT_COSMOS_MAX_TOKENS)
     qa_judge.add_argument("--gemma-max-tokens", type=int, default=DEFAULT_GEMMA_MAX_TOKENS)
     qa_judge.add_argument("--qwen38-max-tokens", type=int, default=DEFAULT_QWEN38_MAX_TOKENS)
+    qa_judge.add_argument("--qwen3-vl-max-tokens", type=int, default=DEFAULT_QWEN3_VL_MAX_TOKENS)
     qa_judge.add_argument(
         "--thinking-token-budget", type=int, default=DEFAULT_THINKING_TOKEN_BUDGET,
         help="Local thinking token limit (default: 6144); must be below max-tokens when enabled.",
@@ -279,16 +285,18 @@ def _validate(args: argparse.Namespace, parser: argparse.ArgumentParser) -> None
         parser.error("--video-id cannot be combined with --input question_only")
     if args.command == "qa-judge":
         concurrency = {
-            COSMOS_QA_MODEL: DEFAULT_COSMOS_WORKERS,
+            **{model: DEFAULT_COSMOS_WORKERS for model in COSMOS_QA_MODELS},
             GEMMA_QA_MODEL: DEFAULT_GEMMA_WORKERS,
             QWEN38_QA_MODEL: DEFAULT_QWEN38_WORKERS,
+            **{model: DEFAULT_QWEN3_VL_WORKERS for model in QWEN3_VL_QA_MODELS},
         }.get(args.qa_model, 24)
         if args.qa_concurrency is None:
             args.qa_concurrency = concurrency
         if args.qa_service_concurrency is None:
             args.qa_service_concurrency = concurrency
         if args.qa_rpm is None:
-            args.qa_rpm = 0 if args.qa_model in (COSMOS_QA_MODEL, GEMMA_QA_MODEL, QWEN38_QA_MODEL) else 20
+            local_models = (*COSMOS_QA_MODELS, GEMMA_QA_MODEL, QWEN38_QA_MODEL, *QWEN3_VL_QA_MODELS)
+            args.qa_rpm = 0 if args.qa_model in local_models else 20
     if getattr(args, "audit_only", False) and (args.force or args.repair_variant_context):
         parser.error("--audit-only cannot be combined with --force or --repair-variant-context")
     if getattr(args, "repair_variant_context", False):
@@ -330,6 +338,7 @@ def _validate(args: argparse.Namespace, parser: argparse.ArgumentParser) -> None
         "cosmos_max_tokens",
         "gemma_max_tokens",
         "qwen38_max_tokens",
+        "qwen3_vl_max_tokens",
         "thinking_token_budget",
     ):
         if hasattr(args, field) and getattr(args, field) <= 0:
@@ -342,6 +351,11 @@ def _validate(args: argparse.Namespace, parser: argparse.ArgumentParser) -> None
                     validate_thinking_token_budget(args.thinking_token_budget, max_tokens)
             except PipelineError as exc:
                 parser.error(str(exc))
+    if args.command == "summarize" and args.qa_model in QWEN3_VL_QA_MODELS:
+        try:
+            expand_thinking_efforts(args.thinking_effort, args.qa_model)
+        except PipelineError as exc:
+            parser.error(str(exc))
     for field in ("openrouter_rpm", "qa_rpm", "judge_rpm"):
         if hasattr(args, field) and (not math.isfinite(getattr(args, field)) or getattr(args, field) < 0):
             parser.error(f"--{field.replace('_', '-')} must be finite and nonnegative")

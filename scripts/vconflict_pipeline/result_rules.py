@@ -5,7 +5,7 @@ from typing import Any, Iterable
 
 from .common import PipelineError
 from .settings import (
-    COSMOS_QA_MODEL,
+    COSMOS_QA_MODELS,
     FAIRY_TALE_GROUP,
     GEMINI_ARGON_QA_MODEL,
     GEMINI_QA_MODEL,
@@ -13,6 +13,9 @@ from .settings import (
     KIMI_QA_MODEL,
     QWEN_QA_MODEL,
     QWEN38_QA_MODEL,
+    QWEN3_VL_INSTRUCT_QA_MODEL,
+    QWEN3_VL_THINKING_QA_MODEL,
+    QWEN3_VL_QA_MODELS,
 )
 
 
@@ -63,9 +66,11 @@ QA_THINKING_EFFORTS = {
     GEMINI_ARGON_QA_MODEL: ("default",),
     QWEN_QA_MODEL: (None, "default"),
     KIMI_QA_MODEL: ("default",),
-    COSMOS_QA_MODEL: (None, "default"),
+    **{model: (None, "default") for model in COSMOS_QA_MODELS},
     GEMMA_QA_MODEL: (None, "default"),
     QWEN38_QA_MODEL: (None, "default"),
+    QWEN3_VL_INSTRUCT_QA_MODEL: (None,),
+    QWEN3_VL_THINKING_QA_MODEL: ("default",),
 }
 DEFAULT_THINKING_EFFORT = "default"
 
@@ -84,10 +89,10 @@ def expand_thinking_efforts(
         raise PipelineError(f"Unsupported QA model: {qa_model}") from exc
     requested = list(values or [])
     if not requested:
-        return (DEFAULT_THINKING_EFFORT,)
-    if "all" in requested:
+        return efforts if len(efforts) == 1 else (DEFAULT_THINKING_EFFORT,)
+    if "all" in requested and qa_model not in QWEN3_VL_QA_MODELS:
         return efforts
-    selected = {normalize_thinking_effort(value) for value in requested}
+    selected = {normalize_thinking_effort(value) for value in requested if value != "all"}
     unsupported = selected - set(efforts)
     if unsupported:
         provided = ", ".join(
@@ -102,6 +107,8 @@ def expand_thinking_efforts(
             f"Thinking effort {provided} is not supported by {qa_model}. "
             f"Supported efforts: {available}."
         )
+    if "all" in requested:
+        return efforts
     return tuple(effort for effort in efforts if effort in selected)
 
 

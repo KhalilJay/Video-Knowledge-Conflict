@@ -27,7 +27,10 @@ from vconflict_pipeline.settings import (
 
 
 CLOSED_MODELS = ("gemini-3.1-pro", "gemini-4-argon", "qwen3.8-max", "kimi-k3")
-LOCAL_MODELS = ("cosmos3-nano", "gemma4", "qwen3.8-27b")
+LOCAL_MODELS = (
+    "cosmos3-nano", "cosmos3-super", "gemma4", "qwen3.8-27b",
+    "qwen3-vl-32b-instruct", "qwen3-vl-32b-thinking",
+)
 MODELS = (*CLOSED_MODELS, *LOCAL_MODELS)
 MODEL_ALIASES = {"cosmos": "cosmos3-nano", "gemma": "gemma4"}
 GROUPS = (
@@ -95,8 +98,12 @@ def build_plan(args: argparse.Namespace, config: dict,
     conditions = tuple(dict.fromkeys(args.condition or CONDITIONS))
     plan = []
     for model in models:
-        # Qwen Max and all local models run both none and default efforts.
-        effort = "all" if model == "qwen3.8-max" or model in LOCAL_MODELS else "default"
+        if model == "qwen3-vl-32b-instruct":
+            effort = "none"
+        elif model == "qwen3-vl-32b-thinking":
+            effort = "default"
+        else:
+            effort = "all" if model == "qwen3.8-max" or model in LOCAL_MODELS else "default"
         limits = {field: config[field] for field in SHARED_FIELDS}
         limits.update(config["models"][model])
         for group in groups:
@@ -233,7 +240,7 @@ def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--model", default="all", choices=("all", *MODELS),
                         type=lambda value: MODEL_ALIASES.get(value, value),
-                        help="Default: all (Gemini 3.1 Pro, Gemini 4 Argon, Qwen Max, Kimi); aliases: cosmos, gemma.")
+                        help="Default: all (Gemini 3.1 Pro, Gemini 4 Argon, Qwen Max, Kimi); aliases: cosmos (cosmos3-nano), gemma.")
     parser.add_argument("--group", action="append", choices=GROUPS,
                         help="Repeat to select groups; default: all four groups, including math.")
     parser.add_argument("--condition", action="append", choices=tuple(CONDITIONS),

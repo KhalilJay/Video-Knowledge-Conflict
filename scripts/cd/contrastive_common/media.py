@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import copy
+from .models import processing_family
 from .video import load_frames, prepare_inputs
 
 
@@ -51,7 +52,7 @@ def prepare_video(processor, target, args, *, messages=None, continuation=False,
     cache = sample_cache if sample_cache is not None else {}
     if 'positive' not in cache:
         media = load_frames(target['video_path'], 'cosmos')
-        cache['positive'] = sample_media(media, SAMPLING[args.model_family].positive_fps,
+        cache['positive'] = sample_media(media, SAMPLING[processing_family(args.model_family)].positive_fps,
                                          family=args.model_family, processor=processor)
     positive, audit = cache['positive']
     full = prepare_inputs(processor, messages if messages is not None else target['messages'],

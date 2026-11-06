@@ -26,6 +26,21 @@ def grouped_dir(root: Path, group: str | None) -> Path:
     return root if group is None else root / validate_group(group)
 
 
+def model_output_dir(root: Path, name: str) -> Path:
+    """Use full Nano names for new outputs and resume an existing legacy directory."""
+    output = root / name
+    if name in ("cosmos_nano", "cosmos3-nano"):
+        legacy = root / "cosmos"
+        if output.exists() and legacy.exists():
+            raise PipelineError(
+                f"Both Nano output directories exist: {output} and {legacy}. "
+                "Choose a separate output root; results are not merged automatically."
+            )
+        if legacy.exists():
+            return legacy
+    return output
+
+
 def resolve_video_path(
     local_path: str, must_exist: bool = False, *, project_root: Path | None = None,
 ) -> Path:

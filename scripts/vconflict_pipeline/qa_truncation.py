@@ -8,7 +8,7 @@ import threading
 from pathlib import Path
 from typing import Any
 
-from .settings import COSMOS_QA_MODEL
+from .settings import COSMOS_QA_MODELS
 
 
 def split_truncated_response(response: dict[str, Any], model: str) -> dict[str, Any]:
@@ -27,11 +27,11 @@ def split_truncated_response(response: dict[str, Any], model: str) -> dict[str, 
         )
     reasoning_fields = [field for field in ("reasoning", "reasoning_content")
                         if isinstance(message.get(field), str)]
-    if model != COSMOS_QA_MODEL and reasoning_fields:
+    if model not in COSMOS_QA_MODELS and reasoning_fields:
         field = next((field for field in reasoning_fields if message[field]), reasoning_fields[0])
         return {"reasoning_text": message[field], "answer_text": answer,
                 "reasoning_source": f"message.{field}"}
-    if model == COSMOS_QA_MODEL and "<think>" in answer:
+    if model in COSMOS_QA_MODELS and "<think>" in answer:
         reasoning_parts, answer_parts = [], []
         offset = 0
         unclosed = False

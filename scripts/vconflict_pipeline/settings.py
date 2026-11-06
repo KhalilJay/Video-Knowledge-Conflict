@@ -13,31 +13,43 @@ GEMINI_QA_MODEL = "google/gemini-3.1-pro-preview"
 GEMINI_ARGON_QA_MODEL = "google/gemini-4-argon"
 QWEN_QA_MODEL = "qwen3.8-max"
 KIMI_QA_MODEL = "kimi-k3"
-COSMOS_QA_MODEL = "nvidia/Cosmos3-Nano"
+COSMOS_NANO_QA_MODEL = "nvidia/Cosmos3-Nano"
+COSMOS_SUPER_QA_MODEL = "nvidia/Cosmos3-Super"
+COSMOS_QA_MODELS = (COSMOS_NANO_QA_MODEL, COSMOS_SUPER_QA_MODEL)
 GEMMA_QA_MODEL = "google/gemma-4-31B-it"
 QWEN38_QA_MODEL = "Qwen/Qwen3.8-27B"
+QWEN3_VL_INSTRUCT_QA_MODEL = "Qwen/Qwen3-VL-32B-Instruct"
+QWEN3_VL_THINKING_QA_MODEL = "Qwen/Qwen3-VL-32B-Thinking"
+QWEN3_VL_QA_MODELS = (QWEN3_VL_INSTRUCT_QA_MODEL, QWEN3_VL_THINKING_QA_MODEL)
 DEFAULT_QA_MODEL = GEMINI_QA_MODEL
 CLI_QA_MODELS = (
     "gemini-3.1-pro", "gemini-4-argon", QWEN_QA_MODEL, KIMI_QA_MODEL,
-    "cosmos3-nano", "gemma4", "qwen3.8-27b",
+    "cosmos3-nano", "cosmos3-super", "gemma4", "qwen3.8-27b",
+    "qwen3-vl-32b-instruct", "qwen3-vl-32b-thinking",
 )
 CLI_QA_MODEL_IDS = {
     "gemini-3.1-pro": GEMINI_QA_MODEL,
     "gemini-4-argon": GEMINI_ARGON_QA_MODEL,
     QWEN_QA_MODEL: QWEN_QA_MODEL,
     KIMI_QA_MODEL: KIMI_QA_MODEL,
-    "cosmos3-nano": COSMOS_QA_MODEL,
+    "cosmos3-nano": COSMOS_NANO_QA_MODEL,
+    "cosmos3-super": COSMOS_SUPER_QA_MODEL,
     "gemma4": GEMMA_QA_MODEL,
     "qwen3.8-27b": QWEN38_QA_MODEL,
+    "qwen3-vl-32b-instruct": QWEN3_VL_INSTRUCT_QA_MODEL,
+    "qwen3-vl-32b-thinking": QWEN3_VL_THINKING_QA_MODEL,
 }
 QA_MODEL_SLUGS = {
     GEMINI_QA_MODEL: "gemini3_1_pro",
     GEMINI_ARGON_QA_MODEL: "gemini4_argon",
     QWEN_QA_MODEL: "qwen",
     KIMI_QA_MODEL: "kimi",
-    COSMOS_QA_MODEL: "cosmos",
+    COSMOS_NANO_QA_MODEL: "cosmos_nano",
+    COSMOS_SUPER_QA_MODEL: "cosmos_super",
     GEMMA_QA_MODEL: "gemma",
     QWEN38_QA_MODEL: "qwen38_27b",
+    QWEN3_VL_INSTRUCT_QA_MODEL: "qwen3_vl_32b_instruct",
+    QWEN3_VL_THINKING_QA_MODEL: "qwen3_vl_32b_thinking",
 }
 CLI_THINKING_EFFORTS = ("none", "default")
 FAIRY_TALE_GROUP = "classic_fairy_tale_film_conflicts"
@@ -56,6 +68,9 @@ DEFAULT_GEMMA_MAX_TOKENS = 8192
 DEFAULT_QWEN38_BASE_URL = "http://127.0.0.1:8002/v1"
 DEFAULT_QWEN38_WORKERS = 1
 DEFAULT_QWEN38_MAX_TOKENS = 8192
+DEFAULT_QWEN3_VL_BASE_URL = "http://127.0.0.1:8003/v1"
+DEFAULT_QWEN3_VL_WORKERS = 1
+DEFAULT_QWEN3_VL_MAX_TOKENS = 8192
 DEFAULT_THINKING_TOKEN_BUDGET = 6144
 DEFAULT_SEEDANCE_TOTAL_WORKERS = 12
 

@@ -1,8 +1,11 @@
 """Local model loading and isolated generation state for CD branches."""
 from __future__ import annotations
 
+from .models import processing_family
+
 
 def load_runtime(family: str, path: str, device: str, dtype_name: str):
+    family = processing_family(family)
     import torch
     import transformers
     from transformers import AutoConfig, AutoProcessor

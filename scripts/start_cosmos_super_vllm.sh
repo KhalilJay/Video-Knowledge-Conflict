@@ -1,10 +1,11 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# vLLM 0.29.0 / torch 2.13.0+cu130；默认使用 GPU 0 单卡。
-# 双卡示例：CUDA_VISIBLE_DEVICES=0,1 TENSOR_PARALLEL_SIZE=2 bash scripts/start_cosmos_vllm.sh
-# 可追加 vLLM 参数，例如：bash scripts/start_cosmos_vllm.sh --max-model-len 32768
-# 显存预算可调整：GPU_MEMORY_UTILIZATION=0.85 bash scripts/start_cosmos_vllm.sh
+# Cosmos3-Super reasoner；vLLM 0.29.0 / torch 2.13.0+cu130；默认使用 GPU 0 单卡。
+# 默认端口 8000，与 Nano 共用 COSMOS_BASE_URL；切换权重时先停止原服务。
+# 双卡示例：CUDA_VISIBLE_DEVICES=0,1 TENSOR_PARALLEL_SIZE=2 bash scripts/start_cosmos_super_vllm.sh
+# 可追加 vLLM 参数，例如：bash scripts/start_cosmos_super_vllm.sh --max-model-len 32768
+# 显存预算可调整：GPU_MEMORY_UTILIZATION=0.85 bash scripts/start_cosmos_super_vllm.sh
 
 script_dir="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd -P)"
 repo_root="$(cd -- "$script_dir/.." && pwd -P)"
@@ -43,8 +44,9 @@ if [[ ! -d "$VIDEO_ROOT" ]]; then
 fi
 VIDEO_ROOT="$(cd -- "$VIDEO_ROOT" && pwd -P)"
 
-# 0.29.0 原生支持 Cosmos3ForConditionalGeneration，无需旧的架构覆盖参数。
-exec "$CONDA_PREFIX/bin/vllm" serve nvidia/Cosmos3-Nano \
+# 0.29.0 原生支持 Cosmos3ForConditionalGeneration，仅加载 reasoner，跳过生成塔权重。
+# 无需旧插件的 Cosmos3ReasonerForConditionalGeneration 架构覆盖参数。
+exec "$CONDA_PREFIX/bin/vllm" serve nvidia/Cosmos3-Super \
   --tensor-parallel-size "$TENSOR_PARALLEL_SIZE" \
   --dtype bfloat16 \
   --override-generation-config "{\"max_new_tokens\":$MAX_OUTPUT_TOKENS}" \

@@ -5,16 +5,19 @@ import copy
 from pathlib import Path
 
 from vconflict_pipeline.qa import _cosmos_prompt, _video_question_prompt
+from .models import processing_family
 from .sampling import SAMPLING
 
 
 def template_kwargs(family, thinking=True):
+    family = processing_family(family)
     if family == 'qwen':
         return {'enable_thinking': thinking, **({'reasoning_effort': 'xhigh'} if thinking else {})}
     return {'enable_thinking': thinking} if family == 'gemma' else {}
 
 
 def build_messages(question, *, family, video=None, based=False, work_title=None, thinking=True):
+    family = processing_family(family)
     prompt = _video_question_prompt(question, work_title=work_title,
                                     work_title_prefix=work_title is not None, based=based)
     if family == "cosmos":
@@ -27,6 +30,7 @@ def build_messages(question, *, family, video=None, based=False, work_title=None
 
 
 def load_frames(path, family):
+    family = processing_family(family)
     # Exactly the loader used by the main vLLM endpoint, in this same environment.
     from vllm.multimodal.video import VideoBackend
     frames, metadata = VideoBackend.load_bytes(
@@ -70,6 +74,7 @@ def gemma_inputs(processor, rendered, frames, metadata):
 
 def prepare_inputs(processor, messages, *, family, media=None, continuation=False, thinking=True, video_kwargs=None):
     """Render each branch's prompt with shared template settings and assistant history."""
+    family = processing_family(family)
     kwargs = template_kwargs(family, thinking)
     rendered = processor.apply_chat_template(
         messages, tokenize=False, add_generation_prompt=not continuation,

@@ -4,9 +4,10 @@ from __future__ import annotations
 from dataclasses import dataclass, fields
 from pathlib import Path
 
+from vconflict_pipeline.paths import model_output_dir
 from vconflict_pipeline.settings import DEFAULT_CASE_DIR, PROJECT_ROOT
 
-FAMILIES = ('qwen', 'cosmos', 'gemma')
+from .models import canonical_model
 
 
 @dataclass
@@ -61,13 +62,16 @@ class WorkerConfig:
         return None if self.disable_thinking else 'default'
 
     def __post_init__(self):
+        self.model_family = canonical_model(self.model_family)
         if self.disable_thinking:
             self.thinking_token_budget = None
 
 
 def from_arguments(args, family, method=None, *, baseline=False):
+    family = canonical_model(family)
     values = {field.name: getattr(args, field.name) for field in fields(WorkerConfig)
               if hasattr(args, field.name) and field.name != 'model_family'}
     values['method'] = method or getattr(args, 'method', 'cd')
-    values['output'] = (args.output / values['method'] / family if baseline else args.output / family)
+    root = args.output / values['method'] if baseline else args.output
+    values['output'] = model_output_dir(root, family)
     return WorkerConfig(model_family=family, **values)

@@ -17,13 +17,17 @@ from .qa_diagnostics import QADiagnosticStage, QADiagnostics
 from .result_rules import DEFAULT_THINKING_EFFORT, QA_THINKING_EFFORTS, expand_thinking_efforts
 from .selection import eligible_videos
 from .settings import (
-    COSMOS_QA_MODEL,
+    COSMOS_NANO_QA_MODEL,
+    COSMOS_SUPER_QA_MODEL,
+    COSMOS_QA_MODELS,
     DEFAULT_COSMOS_BASE_URL,
     DEFAULT_COSMOS_MAX_TOKENS,
     DEFAULT_GEMMA_BASE_URL,
     DEFAULT_GEMMA_MAX_TOKENS,
     DEFAULT_QWEN38_BASE_URL,
     DEFAULT_QWEN38_MAX_TOKENS,
+    DEFAULT_QWEN3_VL_BASE_URL,
+    DEFAULT_QWEN3_VL_MAX_TOKENS,
     DEFAULT_THINKING_TOKEN_BUDGET,
     GEMINI_ARGON_QA_MODEL,
     GEMINI_QA_MODEL,
@@ -31,6 +35,8 @@ from .settings import (
     KIMI_QA_MODEL,
     QWEN_QA_MODEL,
     QWEN38_QA_MODEL,
+    QWEN3_VL_QA_MODELS,
+    QWEN3_VL_THINKING_QA_MODEL,
 )
 from .transport import (
     EmptyResponseTextError,
@@ -84,6 +90,7 @@ class TruncatedAnswerError(PipelineError):
 
 def prepare_final_answer_continuation(
     error: MissingFinalAnswerError | TruncatedAnswerError, service: str,
+    *, qa_model: str,
 ) -> dict[str, Any]:
     """Preserve the first request and append its complete assistant response."""
     response, original = error.raw_response, error.request_payload
@@ -107,6 +114,10 @@ def prepare_final_answer_continuation(
     payload.update(continue_final_message=True, add_generation_prompt=False,
                    echo=False, max_tokens=FINAL_ANSWER_CONTINUATION_MAX_TOKENS)
     payload.pop("thinking_token_budget", None)
+    if qa_model == QWEN3_VL_THINKING_QA_MODEL:
+        # vLLM 0.29.0 otherwise parses the pure answer suffix as reasoning.
+        # Qwen3-VL Thinking's fixed template ignores this parser-only hint.
+        payload.setdefault("chat_template_kwargs", {})["enable_thinking"] = False
     return {
         "first_response": response,
         "first_generation_parameters": {
@@ -553,7 +564,7 @@ def _kimi_description_payload(
 
 def _cosmos_prompt(prompt_text: str, thinking_effort: str | None) -> str:
     if not prompt_text.endswith(FINAL_ANSWER_INSTRUCTION):
-        raise PipelineError("Cosmos3-Nano question is missing its final-answer instruction.")
+        raise PipelineError("Cosmos question is missing its final-answer instruction.")
     task = prompt_text[: -len(FINAL_ANSWER_INSTRUCTION)].rstrip()
     if thinking_effort is None:
         return prompt_text
@@ -564,7 +575,7 @@ def _cosmos_prompt(prompt_text: str, thinking_effort: str | None) -> str:
             "Write your final answer immediately after the </think> tag."
         )
     else:
-        raise PipelineError("Cosmos3-Nano thinking effort must be none or default.")
+        raise PipelineError("Cosmos thinking effort must be none or default.")
     return f"{task}\n\n{instruction}\n\n{FINAL_ANSWER_INSTRUCTION}"
 
 
@@ -706,6 +717,45 @@ def _qwen38_payload(
     return payload
 
 
+def _qwen3_vl_payload(
+    *,
+    prompt_text: str,
+    video_uri: str | None,
+    thinking_effort: str | None,
+    served_model_id: str,
+    max_tokens: int,
+    thinking_token_budget: int = DEFAULT_THINKING_TOKEN_BUDGET,
+) -> dict[str, Any]:
+    if served_model_id not in QWEN3_VL_QA_MODELS:
+        raise PipelineError(f"Unsupported Qwen3-VL served model: {served_model_id}")
+    expand_thinking_efforts(
+        ["none" if thinking_effort is None else thinking_effort], served_model_id,
+    )
+    content: str | list[dict[str, Any]] = prompt_text
+    if video_uri is not None:
+        content = [
+            {"type": "video_url", "video_url": {"url": video_uri}},
+            {"type": "text", "text": prompt_text},
+        ]
+    payload: dict[str, Any] = {
+        "model": served_model_id,
+        "temperature": 0.0,
+        "seed": 0,
+        "max_tokens": max_tokens,
+        "stream": False,
+        "messages": [{"role": "user", "content": content}],
+    }
+    if served_model_id == QWEN3_VL_THINKING_QA_MODEL:
+        validate_thinking_token_budget(thinking_token_budget, max_tokens)
+        payload["thinking_token_budget"] = thinking_token_budget
+    if video_uri is not None:
+        payload["media_io_kwargs"] = {
+            "video": {"video_backend": "opencv", "num_frames": -1, "fps": -1}
+        }
+        payload["mm_processor_kwargs"] = {"fps": 1, "do_sample_frames": True}
+    return payload
+
+
 @dataclass(frozen=True)
 class LocalQAConfig:
     base_url_variable: str
@@ -715,11 +765,17 @@ class LocalQAConfig:
     build_payload: Callable[..., dict[str, Any]]
 
 
+COSMOS_QA_CONFIG = LocalQAConfig(
+    "COSMOS_BASE_URL", DEFAULT_COSMOS_BASE_URL,
+    "cosmos_max_tokens", DEFAULT_COSMOS_MAX_TOKENS, _cosmos_payload,
+)
+QWEN3_VL_QA_CONFIG = LocalQAConfig(
+    "QWEN3_VL_BASE_URL", DEFAULT_QWEN3_VL_BASE_URL,
+    "qwen3_vl_max_tokens", DEFAULT_QWEN3_VL_MAX_TOKENS, _qwen3_vl_payload,
+)
 LOCAL_QA_CONFIGS = {
-    COSMOS_QA_MODEL: LocalQAConfig(
-        "COSMOS_BASE_URL", DEFAULT_COSMOS_BASE_URL,
-        "cosmos_max_tokens", DEFAULT_COSMOS_MAX_TOKENS, _cosmos_payload,
-    ),
+    **{model: COSMOS_QA_CONFIG for model in COSMOS_QA_MODELS},
+    **{model: QWEN3_VL_QA_CONFIG for model in QWEN3_VL_QA_MODELS},
     GEMMA_QA_MODEL: LocalQAConfig(
         "GEMMA_BASE_URL", DEFAULT_GEMMA_BASE_URL,
         "gemma_max_tokens", DEFAULT_GEMMA_MAX_TOKENS, _gemma_payload,
@@ -780,16 +836,23 @@ KIMI_BACKEND = QABackend(
     max_body_bytes=KIMI_MAX_REQUEST_BODY_BYTES,
     effective_reasoning_effort="max",
 )
-COSMOS_BACKEND = QABackend(
-    model=COSMOS_QA_MODEL,
-    thinking_efforts=QA_THINKING_EFFORTS[COSMOS_QA_MODEL],
-    default_thinking_effort=DEFAULT_THINKING_EFFORT,
-    temperature=0.0,
-    api_key_variable=None,
-    service="Cosmos3-Nano",
-    endpoint=lambda: f"{_local_base_url(COSMOS_QA_MODEL)}/chat/completions",
-    build_payload=None,
-)
+
+
+def _cosmos_backend(model: str) -> QABackend:
+    return QABackend(
+        model=model,
+        thinking_efforts=QA_THINKING_EFFORTS[model],
+        default_thinking_effort=DEFAULT_THINKING_EFFORT,
+        temperature=0.0,
+        api_key_variable=None,
+        service=model.rsplit("/", 1)[-1],
+        endpoint=lambda: f"{_local_base_url(model)}/chat/completions",
+        build_payload=None,
+    )
+
+
+COSMOS_NANO_BACKEND = _cosmos_backend(COSMOS_NANO_QA_MODEL)
+COSMOS_SUPER_BACKEND = _cosmos_backend(COSMOS_SUPER_QA_MODEL)
 GEMMA_BACKEND = QABackend(
     model=GEMMA_QA_MODEL,
     thinking_efforts=QA_THINKING_EFFORTS[GEMMA_QA_MODEL],
@@ -810,11 +873,27 @@ QWEN38_BACKEND = QABackend(
     endpoint=lambda: f"{_local_base_url(QWEN38_QA_MODEL)}/chat/completions",
     build_payload=None,
 )
+
+
+def _qwen3_vl_backend(model: str) -> QABackend:
+    return QABackend(
+        model=model,
+        thinking_efforts=QA_THINKING_EFFORTS[model],
+        default_thinking_effort=expand_thinking_efforts(None, model)[0],
+        temperature=0.0,
+        api_key_variable=None,
+        service=model.rsplit("/", 1)[-1],
+        endpoint=lambda: f"{_local_base_url(model)}/chat/completions",
+        build_payload=None,
+    )
+
+
 QA_BACKENDS = {
     backend.model: backend
     for backend in (
         GEMINI_BACKEND, GEMINI_ARGON_BACKEND, QWEN_BACKEND, KIMI_BACKEND,
-        COSMOS_BACKEND, GEMMA_BACKEND, QWEN38_BACKEND,
+        COSMOS_NANO_BACKEND, COSMOS_SUPER_BACKEND, GEMMA_BACKEND, QWEN38_BACKEND,
+        *(_qwen3_vl_backend(model) for model in QWEN3_VL_QA_MODELS),
     )
 }
 
@@ -1019,7 +1098,7 @@ def run_qa_once(
         result["effective_reasoning_effort"] = backend.effective_reasoning_effort
     if qa_model == QWEN38_QA_MODEL and thinking_effort == "default":
         result["effective_reasoning_effort"] = "xhigh"
-    if qa_model in (GEMMA_QA_MODEL, QWEN38_QA_MODEL):
+    if qa_model in (GEMMA_QA_MODEL, QWEN38_QA_MODEL, QWEN3_VL_THINKING_QA_MODEL):
         message = response["choices"][0]["message"]
         for field in ("reasoning", "reasoning_content"):
             reasoning = message.get(field)
@@ -1066,6 +1145,11 @@ def _local_served_model_id(model: str, timeout: int) -> str:
         raise PipelineError(f"{service} /models returned an invalid model ID.")
     if model in ids:
         return model
+    if model in QWEN3_VL_QA_MODELS:
+        raise PipelineError(
+            f"{service} /models must include the exact model ID {model}; "
+            f"served models: {', '.join(ids)}. Switch the service weights first."
+        )
     if len(ids) == 1:
         return ids[0]
     raise PipelineError(

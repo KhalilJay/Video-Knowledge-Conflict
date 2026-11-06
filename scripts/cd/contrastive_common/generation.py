@@ -1,8 +1,11 @@
 """Answer parsing and context limits shared by all decoding methods."""
 from __future__ import annotations
 
+from .models import processing_family
+
 
 def parsed(processor, ids, stop, family, *, continuation=False, thinking=True):
+    family = processing_family(family)
     tokens = ids[:-1] if ids and ids[-1] in stop else ids
     raw = processor.tokenizer.decode(tokens, skip_special_tokens=False,
                                      clean_up_tokenization_spaces=False)

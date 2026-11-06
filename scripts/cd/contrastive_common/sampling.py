@@ -3,6 +3,8 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
+from .models import processing_family
+
 
 @dataclass(frozen=True)
 class Sampling:
@@ -18,7 +20,7 @@ SAMPLING = {
 
 
 def sampling_config(family, method):
-    rates = SAMPLING[family]
+    rates = SAMPLING[processing_family(family)]
     config = {'positive_fps': rates.positive_fps}
     if method == 'tcd':
         config['negative_fps'] = rates.negative_fps

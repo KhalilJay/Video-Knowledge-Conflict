@@ -5,6 +5,7 @@ from contextlib import AbstractContextManager
 from cd.contrastive_common.adapters import Branch
 from cd.contrastive_common.core import combine_logits
 from cd.contrastive_common.media import annotate_grid, prepare_video, sample_media
+from cd.contrastive_common.models import processing_family
 from cd.contrastive_common.sampling import SAMPLING
 from cd.contrastive_common.video import load_frames, prepare_inputs
 
@@ -13,7 +14,7 @@ def prepare(processor, target, args, *, messages=None, continuation=False, sampl
     cache = sample_cache if sample_cache is not None else {}
     if 'positive' not in cache:
         media = load_frames(target['video_path'], 'cosmos')
-        rates = SAMPLING[args.model_family]
+        rates = SAMPLING[processing_family(args.model_family)]
         cache['positive'] = sample_media(media, rates.positive_fps,
                                          family=args.model_family, processor=processor)
         if args.alpha:

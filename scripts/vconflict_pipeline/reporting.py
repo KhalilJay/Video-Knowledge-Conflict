@@ -9,7 +9,7 @@ from typing import Any, Iterable
 from .common import PipelineError, conflict_question_scopes, require_question_only_compatible, utc_now, video_case_context
 from .filters import question_filter_state, question_gate, scope_id
 from .integrity import judgment_is_current, qa_is_current, video_selected
-from .paths import grouped_dir, iter_case_paths
+from .paths import grouped_dir, iter_case_paths, model_output_dir
 from .result_rules import (
     canonical_verdict,
     expand_thinking_efforts,
@@ -673,7 +673,7 @@ def command_summarize(args: argparse.Namespace) -> int:
         work_title_prefix=work_title_prefix, based=based_condition, index=index,
     )
     model_slug = QA_MODEL_SLUGS[args.qa_model]
-    result_dir = grouped_dir(RESULTS_DIR, args.group) / model_slug
+    result_dir = model_output_dir(grouped_dir(RESULTS_DIR, args.group), model_slug)
     prefix_name = _fairy_video_prefix_name(args)
     filter_mode = getattr(args, 'filter_mode', 'all')
     summaries = {}

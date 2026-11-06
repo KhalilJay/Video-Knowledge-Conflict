@@ -4,14 +4,30 @@ from __future__ import annotations
 import os
 from pathlib import Path
 
-from vconflict_pipeline.settings import COSMOS_QA_MODEL, GEMMA_QA_MODEL, QWEN38_QA_MODEL
+from vconflict_pipeline.settings import (
+    COSMOS_NANO_QA_MODEL, COSMOS_SUPER_QA_MODEL, GEMMA_QA_MODEL, QWEN38_QA_MODEL,
+)
 
-MODELS = {'cosmos': COSMOS_QA_MODEL, 'gemma': GEMMA_QA_MODEL, 'qwen': QWEN38_QA_MODEL}
-REVISIONS = {'cosmos': 'main', 'qwen': 'main',
+DEFAULT_MODELS = ('qwen', 'cosmos3-nano', 'gemma')
+VCD_MODELS = (*DEFAULT_MODELS, 'cosmos3-super')
+MODELS = {'cosmos3-nano': COSMOS_NANO_QA_MODEL, 'cosmos3-super': COSMOS_SUPER_QA_MODEL,
+          'gemma': GEMMA_QA_MODEL, 'qwen': QWEN38_QA_MODEL}
+REVISIONS = {'cosmos3-nano': 'main', 'cosmos3-super': 'main', 'qwen': 'main',
              'gemma': '842da3794eaa0b77d5f08bae87a17459d91ff475'}
 
 
+def canonical_model(model):
+    return 'cosmos3-nano' if model == 'cosmos' else model
+
+
+def processing_family(model):
+    """Keep model identity separate from the shared Cosmos implementation."""
+    model = canonical_model(model)
+    return 'cosmos' if model in ('cosmos3-nano', 'cosmos3-super') else model
+
+
 def resolve_model(family):
+    family = canonical_model(family)
     cache = (Path(os.environ['HF_HUB_CACHE']) if os.environ.get('HF_HUB_CACHE') else
              Path(os.environ['HF_HOME']) / 'hub' if os.environ.get('HF_HOME') else
              Path('/cache/huggingface/hub')).expanduser().resolve()

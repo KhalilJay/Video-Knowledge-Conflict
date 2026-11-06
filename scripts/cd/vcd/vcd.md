@@ -23,11 +23,16 @@ export OPENROUTER_API_KEY=...
 | 模型名称 | 模型 | 缓存 revision |
 |---|---|---|
 | qwen | Qwen/Qwen3.8-27B | main |
-| cosmos | nvidia/Cosmos3-Nano | main |
+| cosmos3-nano | nvidia/Cosmos3-Nano | main |
+| cosmos3-super | nvidia/Cosmos3-Super | main |
 | gemma | google/gemma-4-31B-it | 842da3794eaa0b77d5f08bae87a17459d91ff475 |
 
 缓存根目录依次取 `HF_HUB_CACHE`、`$HF_HOME/hub`、`/cache/huggingface/hub`。
 只解析所选模型；缓存缺失时报错。
+
+Cosmos3-Nano 和 Cosmos3-Super 共用模型加载、提示词、4 fps 采样、thinking 控制、
+串行解码及答案续写流程，全部运行参数一致，模型身份和结果独立。
+旧命令别名 `cosmos` 仍指 `cosmos3-nano`，同时选择两者会报重复模型。
 
 实现与共享设施位于 `scripts/cd/vcd/` 和 `scripts/cd/contrastive_common/`。
 VCD 和 small82 入口均位于本目录，分别为 `run.py` 和 `run_batch.py`。
@@ -40,7 +45,7 @@ VCD 使用独立串行 `decode()`，不进入 TCD/SEASON 的 tensor batch 解码
 
 | 参数 | 用法 |
 |---|---|
-| `--models qwen cosmos gemma` | 选择 1–3 个不同模型，按输入顺序排队；`run.py` 必填，批次默认选择全部三个 |
+| `--models qwen cosmos3-nano gemma cosmos3-super` | 选择 1–4 个不同模型，按输入顺序排队；`run.py` 必填，批次默认只选前三个 |
 | `--gpus 0\|1\|all` | 选择物理 GPU，默认 `all`，表示 GPU 0、1 |
 | `--disable-thinking` | 关闭 thinking，默认开启 |
 | `--dry-run` | 只读展示模型顺序、首轮分卡、等待状态和实际配置，不创建输出 |
@@ -62,6 +67,14 @@ python scripts/cd/vcd/run.py \
   --case-id aladdin_lamp_rubbing_draws_genie_back_inside \
   --video-id v001 --question-id q001 \
   --output results/vcd/example
+
+# Super 单题配置预览；移除 --dry-run 后执行
+python scripts/cd/vcd/run.py \
+  --models cosmos3-super --gpus 0 \
+  --group classic_fairy_tale_film_conflicts \
+  --case-id aladdin_lamp_rubbing_draws_genie_back_inside \
+  --video-id v001 --question-id q001 \
+  --output results/vcd/super_example --dry-run
 ```
 
 `--dataset-dir` 默认 `dataset/cases`。`--group`、`--case-id`、`--video-id`、
@@ -88,7 +101,7 @@ python scripts/cd/vcd/run.py \
 
 ```bash
 python scripts/cd/vcd/run.py \
-  --models cosmos qwen gemma --gpus all \
+  --models cosmos3-nano qwen gemma --gpus all \
   --disable-thinking --output results/vcd/no_thinking
 ```
 
@@ -172,12 +185,18 @@ results/vcd/example/
     report.json
     report.md
     logs/<queue_run_id>_<phase>.log
-  cosmos/ ...
+  cosmos3-nano/ ...
+  cosmos3-super/ ...
   gemma/ ...
 ```
 
 各模型独立保存配置、case、报告和日志，父目录记录模型顺序、排队状态、GPU、PID 和退出码。
 旧单模型直接写入根目录的结果不自动搬迁或覆盖，应选择新的输出根目录。
+
+Nano 新建输出使用 `cosmos3-nano/`；若已有结果仅含旧 `cosmos/`，继续使用该目录。
+新旧目录同时存在时报错，不自动合并。旧清单中的 `cosmos` 在读取时归一化，
+历史 QA 指纹仅兼容模型名称变化，其余绑定继续严格核对；续跑、汇总和 force 均识别旧记录，
+不批量改写历史 JSON 或指纹。
 
 普通续跑使用相同参数和输出目录，只补缺失、失败或过期的 QA/Judge。
 问题、视频路径、prompt 条件、模型路径或生成参数变化时新增 QA，保留历史结果；
@@ -225,7 +244,7 @@ SIGINT / SIGTERM 会停止派发、通知活动进程并等待退出，分别返
 每模型 177 条 QA，四组分别为 54 / 46 / 43 / 34 条。
 这里的 batch 指冻结样本集合；每个模型内部仍逐题调用独立串行解码。
 
-批次默认选择 `qwen cosmos gemma`，GPU 默认 `all`；固定 `alpha=1`、
+批次默认选择 `qwen cosmos3-nano gemma`，Super 必须显式选择，GPU 默认 `all`；固定 `alpha=1`、
 BF16、greedy、8192 / 6144 预算。beta 默认 `0.1`，可用 `--beta` 调整。
 `based` 默认开启，传入 `--no-based` 可关闭依据视频回答的指令；该开关适用于全部模型、
 smoke、正式运行及汇总。`run.py` 仍默认关闭，使用 `--based` 开启。
@@ -236,12 +255,12 @@ smoke、正式运行及汇总。`run.py` 仍默认关闭，使用 `--based` 开�
 ```bash
 # 只读预览，不创建输出、不检查 GPU、不加载模型、不请求 Judge
 python scripts/cd/vcd/run_batch.py \
-  --models cosmos qwen gemma --gpus 1 --disable-thinking \
+  --models cosmos3-nano qwen gemma --gpus 1 --disable-thinking \
   --output-root results/vcd/small82_no_thinking --dry-run
 
 # 先按队列完成所有所选模型的同一道题，全部 QA/Judge 成功后再进入完整批次
 python scripts/cd/vcd/run_batch.py \
-  --models cosmos qwen gemma --gpus all --disable-thinking \
+  --models cosmos3-nano qwen gemma --gpus all --disable-thinking \
   --output-root results/vcd/small82_no_thinking --smoke-first
 
 # 单模型续跑，读取同一冻结清单
@@ -261,14 +280,15 @@ python scripts/cd/vcd/run_batch.py \
 
 # 仅 video 分支开启 based；检查配置后移除 --dry-run，可加 --smoke-first 先验收单题
 python scripts/cd/vcd/run_batch.py \
-  --models qwen cosmos gemma --gpus all \
+  --models qwen cosmos3-nano gemma --gpus all \
   --question-no-based \
   --output-root results/vcd/small82_video_based_question_no_based --dry-run
 ```
 
 `--output-root` 默认 `results/vcd/small82_alpha1_based`。首次运行写入 `selection.json`，
 保存分组、case、视频、问题、模型路径和生成配置；续跑核对冻结任务，不重新抽样。
-未选模型不解析缓存，兼容清单允许补充 Cosmos。`--smoke-first` 中任一模型失败时不进入正式批次。
+未选模型不解析缓存，兼容清单允许显式补充 Cosmos3-Super，不重新抽样。
+`--smoke-first` 中任一模型失败时不进入正式批次。
 
 更换 beta、based、question_no_based、thinking 模式或其他冻结配置时使用独立输出目录。
 关闭 based 时须显式指定独立的 `--output-root`；默认输出目录保持不变。
