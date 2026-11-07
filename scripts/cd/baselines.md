@@ -77,6 +77,8 @@ python scripts/cd/run_baselines.py --batch-size auto --max-batch-size 32 --autot
 | `--alpha` / `--beta` | `1.0` / `0.1`；beta 仅用于 VCD/TCD 的 plausibility mask |
 | `--season-beta` / `--noise-step` / `--noise-seed` | `0.33` / `10` / `42` |
 | `--disable-thinking` | 忽略 thinking 预算；各分支使用相同开关 |
+| `--judge-concurrency` / `--judge-rpm` | `32` / `60` |
+| `--openrouter-concurrency` / `--openrouter-rpm` | `32` / `60`；与同机共享 OpenRouter 额度的其他任务保持一致 |
 | `--dry-run` | 只读展示实际 FPS、batch、GPU 分配与输出路径，不创建输出 |
 
 `--force-qa` 重做当前匹配的 QA；`--force-judge` 保留 QA 并重新判分。

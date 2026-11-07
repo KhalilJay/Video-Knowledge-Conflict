@@ -31,7 +31,7 @@ from .settings import (
     DEFAULT_THINKING_TOKEN_BUDGET,
     GEMINI_ARGON_QA_MODEL,
     GEMINI_QA_MODEL,
-    GEMMA_QA_MODEL,
+    GEMMA_QA_MODELS,
     KIMI_QA_MODEL,
     QWEN_QA_MODEL,
     QWEN38_QA_MODEL,
@@ -773,13 +773,14 @@ QWEN3_VL_QA_CONFIG = LocalQAConfig(
     "QWEN3_VL_BASE_URL", DEFAULT_QWEN3_VL_BASE_URL,
     "qwen3_vl_max_tokens", DEFAULT_QWEN3_VL_MAX_TOKENS, _qwen3_vl_payload,
 )
+GEMMA_QA_CONFIG = LocalQAConfig(
+    "GEMMA_BASE_URL", DEFAULT_GEMMA_BASE_URL,
+    "gemma_max_tokens", DEFAULT_GEMMA_MAX_TOKENS, _gemma_payload,
+)
 LOCAL_QA_CONFIGS = {
     **{model: COSMOS_QA_CONFIG for model in COSMOS_QA_MODELS},
     **{model: QWEN3_VL_QA_CONFIG for model in QWEN3_VL_QA_MODELS},
-    GEMMA_QA_MODEL: LocalQAConfig(
-        "GEMMA_BASE_URL", DEFAULT_GEMMA_BASE_URL,
-        "gemma_max_tokens", DEFAULT_GEMMA_MAX_TOKENS, _gemma_payload,
-    ),
+    **{model: GEMMA_QA_CONFIG for model in GEMMA_QA_MODELS},
     QWEN38_QA_MODEL: LocalQAConfig(
         "QWEN38_BASE_URL", DEFAULT_QWEN38_BASE_URL,
         "qwen38_max_tokens", DEFAULT_QWEN38_MAX_TOKENS, _qwen38_payload,
@@ -853,16 +854,21 @@ def _cosmos_backend(model: str) -> QABackend:
 
 COSMOS_NANO_BACKEND = _cosmos_backend(COSMOS_NANO_QA_MODEL)
 COSMOS_SUPER_BACKEND = _cosmos_backend(COSMOS_SUPER_QA_MODEL)
-GEMMA_BACKEND = QABackend(
-    model=GEMMA_QA_MODEL,
-    thinking_efforts=QA_THINKING_EFFORTS[GEMMA_QA_MODEL],
-    default_thinking_effort=DEFAULT_THINKING_EFFORT,
-    temperature=0.0,
-    api_key_variable=None,
-    service="Gemma 4",
-    endpoint=lambda: f"{_local_base_url(GEMMA_QA_MODEL)}/chat/completions",
-    build_payload=None,
-)
+
+
+def _gemma_backend(model: str) -> QABackend:
+    return QABackend(
+        model=model,
+        thinking_efforts=QA_THINKING_EFFORTS[model],
+        default_thinking_effort=DEFAULT_THINKING_EFFORT,
+        temperature=0.0,
+        api_key_variable=None,
+        service=model.rsplit("/", 1)[-1],
+        endpoint=lambda: f"{_local_base_url(model)}/chat/completions",
+        build_payload=None,
+    )
+
+
 QWEN38_BACKEND = QABackend(
     model=QWEN38_QA_MODEL,
     thinking_efforts=QA_THINKING_EFFORTS[QWEN38_QA_MODEL],
@@ -892,7 +898,8 @@ QA_BACKENDS = {
     backend.model: backend
     for backend in (
         GEMINI_BACKEND, GEMINI_ARGON_BACKEND, QWEN_BACKEND, KIMI_BACKEND,
-        COSMOS_NANO_BACKEND, COSMOS_SUPER_BACKEND, GEMMA_BACKEND, QWEN38_BACKEND,
+        COSMOS_NANO_BACKEND, COSMOS_SUPER_BACKEND, QWEN38_BACKEND,
+        *(_gemma_backend(model) for model in GEMMA_QA_MODELS),
         *(_qwen3_vl_backend(model) for model in QWEN3_VL_QA_MODELS),
     )
 }
@@ -1098,7 +1105,7 @@ def run_qa_once(
         result["effective_reasoning_effort"] = backend.effective_reasoning_effort
     if qa_model == QWEN38_QA_MODEL and thinking_effort == "default":
         result["effective_reasoning_effort"] = "xhigh"
-    if qa_model in (GEMMA_QA_MODEL, QWEN38_QA_MODEL, QWEN3_VL_THINKING_QA_MODEL):
+    if qa_model in (*GEMMA_QA_MODELS, QWEN38_QA_MODEL, QWEN3_VL_THINKING_QA_MODEL):
         message = response["choices"][0]["message"]
         for field in ("reasoning", "reasoning_content"):
             reasoning = message.get(field)

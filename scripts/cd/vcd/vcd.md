@@ -227,7 +227,7 @@ python scripts/cd/vcd/run.py --models qwen --output results/vcd/qa_only
 python scripts/cd/vcd/run.py --models qwen --output results/vcd/qa_only --summarize-only
 ```
 
-Judge 默认并发 24 / RPM 20，OpenRouter 并发 24 / RPM 20，超时 600 秒，网络最多重试 4 次。
+独立入口的 Judge 默认并发 32 / RPM 60，OpenRouter 并发 32 / RPM 60，超时 600 秒，网络最多重试 4 次。
 可通过 `--judge-concurrency`、`--judge-rpm`、`--openrouter-concurrency`、`--openrouter-rpm`、
 `--timeout`、`--max-retries` 调整。`--max-token-log /path/truncation.jsonl` 只在真实截断时
 追加保存任务、阶段、有效预算、回答文本和结束原因。

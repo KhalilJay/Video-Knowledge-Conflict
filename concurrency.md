@@ -30,6 +30,10 @@ OpenRouter 总额度，不能把各池的并发直接相加。两种 Gemini 复�
 Qwen、Kimi、本地 QA 不占用 OpenRouter 额度。本地并发是客户端在途上限，
 不是 vLLM `max-num-seqs`，不会自动增加 GPU 的推理容量。
 
+Gemma 4 31B（`gemma4-31b`）和 12B（`gemma4-12b`）的直接 QA/共享服务默认并发
+均为 4/4、RPM 为 0；run_all 均为 32/32、RPM 为 0。两者共用 `GEMMA_BASE_URL`，
+服务并发按同一 endpoint 协调，任务和结果仍按持久化模型 ID 隔离。
+
 `qa-judge` 不再接受 `--case-workers`、`--qa-workers`、`--cosmos-workers`、
 `--gemma-workers`、`--openrouter-workers`，错误信息会提示替代参数。
 此前的 author/questions/description 等 stage 保留原来的 workers 参数。

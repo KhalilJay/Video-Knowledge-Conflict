@@ -3,17 +3,14 @@
 from __future__ import annotations
 
 import argparse
-import os
-import subprocess
 import sys
 from collections import defaultdict
 from dataclasses import dataclass
 from pathlib import Path
-from urllib.parse import quote
 
-from run_qa_judge import CONDITIONS, GROUPS, MODELS, MODEL_ALIASES, display_command, project_path
+from run_qa_judge import CONDITIONS, GROUPS, MODELS, MODEL_ALIASES, project_path
 from vconflict_pipeline.common import PipelineError, utc_now
-from vconflict_pipeline.paths import model_output_dir
+from vconflict_pipeline.reporting import collect_summaries
 from vconflict_pipeline.result_rules import (
     expand_thinking_efforts,
     qa_result_based,
@@ -22,7 +19,7 @@ from vconflict_pipeline.result_rules import (
     qa_result_work_title_prefix,
     work_title_prefix_condition,
 )
-from vconflict_pipeline.settings import CLI_QA_MODEL_IDS, PROJECT_ROOT, QA_MODEL_SLUGS, RESULTS_DIR
+from vconflict_pipeline.settings import CLI_QA_MODEL_IDS, RESULTS_DIR
 from vconflict_pipeline.storage import atomic_write_json, atomic_write_text, read_json
 
 
@@ -57,19 +54,10 @@ class Experiment:
                 "condition": self.condition, "input": self.input_mode,
                 "based": self.based, "prefix": self.prefix, "filter": "all"}
 
-    def command(self, args: argparse.Namespace) -> list[str]:
-        command = [sys.executable, "-u", str(PROJECT_ROOT / "scripts" / "pipeline.py"),
-                   "summarize", "--dataset-dir", str(args.dataset_dir),
-                   "--qa-model", self.model, "--group", self.group,
-                   "--input", self.input_mode,
-                   "--summary-workers", str(args.summary_workers)]
-        for effort in self.efforts:
-            command.extend(("--thinking-effort", "none" if effort is None else effort))
-        if self.based:
-            command.append("--based")
-        if self.prefix:
-            command.append("--with-work-title-prefix")
-        return command
+    @property
+    def label(self) -> str:
+        efforts = ", ".join("none" if effort is None else effort for effort in self.efforts)
+        return f"{self.model} / {self.group} / {self.condition} (efforts: {efforts})"
 
 
 def discover(args: argparse.Namespace) -> tuple[list[Experiment], list[dict]]:
@@ -132,64 +120,27 @@ def discover(args: argparse.Namespace) -> tuple[list[Experiment], list[dict]]:
     return experiments, failures
 
 
-def collect_reports(experiment: Experiment, stdout: str) -> list[dict]:
-    """Read only output paths announced by this successful native invocation."""
-    summary_paths = []
-    report_paths = []
-    for line in stdout.splitlines():
-        if line.startswith("Wrote summary: "):
-            summary_paths.append(project_path(Path(line.removeprefix("Wrote summary: ").strip())))
-        elif line.startswith("Wrote report: "):
-            report_paths.append(project_path(Path(line.removeprefix("Wrote report: ").strip())))
-    if (len(summary_paths) != len(experiment.efforts)
-            or len(set(summary_paths)) != len(summary_paths) or len(report_paths) != 1):
-        raise PipelineError("Native summarize did not announce all expected JSON/Markdown reports")
-    parent = model_output_dir(RESULTS_DIR / experiment.group, QA_MODEL_SLUGS[experiment.qa_model]).resolve()
-    report_path = report_paths[0]
-    for path in [*summary_paths, report_path]:
-        if path.parent != parent or not path.is_file():
-            raise PipelineError(f"Unexpected or missing native report: {path}")
-    if report_path.suffix != ".md":
-        raise PipelineError(f"Expected a native Markdown report: {report_path}")
-    expected = {"none" if effort is None else effort for effort in experiment.efforts}
-    records = {}
-    for path in summary_paths:
-        if path.suffix != ".json":
-            raise PipelineError(f"Expected a native JSON summary: {path}")
-        summary = read_json(path)
-        effort = summary.get("thinking_effort")
-        if (effort not in expected or effort in records
-                or summary.get("qa_model") != experiment.qa_model
-                or summary.get("input") != experiment.input_mode
-                or summary.get("based") is not experiment.based
-                or summary.get("work_title_prefix") is not experiment.prefix
-                or summary.get("filter") != "all"):
-            raise PipelineError(f"Native summary metadata does not match this experiment: {path}")
-        conflict = summary.get("answers", {}).get("conflict")
-        if (not isinstance(conflict, dict)
-                or not {"total", "labels", "grounded_answer_rate", "trapped_answer_rate"}.issubset(conflict)
-                or not isinstance(conflict["labels"], dict)
-                or not {"context_grounded", "knowledge_trapped", "ambiguous_or_unjudgeable"}
-                .issubset(conflict["labels"])):
-            raise PipelineError(f"Native summary has no complete answers.conflict: {path}")
-        records[effort] = {
-            **experiment.identity(), "effort": effort,
-            "native_summary_path": path.relative_to(PROJECT_ROOT).as_posix(),
-            "native_report_path": report_path.relative_to(PROJECT_ROOT).as_posix(),
-            "conflict": conflict,
+def summarize_experiment(experiment: Experiment, args: argparse.Namespace) -> list[dict]:
+    collection = collect_summaries(argparse.Namespace(
+        dataset_dir=args.dataset_dir, group=experiment.group, case_id=None,
+        qa_model=experiment.qa_model, input=experiment.input_mode,
+        thinking_effort=["none" if effort is None else effort for effort in experiment.efforts],
+        with_work_title_prefix=bool(experiment.prefix), based=experiment.based,
+        filter_mode="all", summary_workers=args.summary_workers,
+    ))
+    return [
+        {
+            **experiment.identity(), "effort": summary["thinking_effort"],
+            "conflict": summary["answers"]["conflict"],
         }
-    return [records["none" if effort is None else effort] for effort in experiment.efforts]
+        for summary in collection.summaries.values()
+    ]
 
 
 def markdown_cell(value: object) -> str:
     if value is None:
         return "null"
     return str(value).replace("|", r"\|").replace("\r", " ").replace("\n", "<br>")
-
-
-def native_link(label: str, relative_path: str) -> str:
-    path = os.path.relpath(PROJECT_ROOT / relative_path, OUTPUT_DIR).replace("\\", "/")
-    return f"[{label}]({quote(path, safe='/._-')})"
 
 
 def build_report(summary: dict) -> str:
@@ -204,8 +155,8 @@ def build_report(summary: dict) -> str:
              f"跳过 {summary['skipped_combinations']} 个未发现目标 QA 的组合。", ""]
     if summary["experiments"]:
         lines.extend([
-            "| Model | Group | Input | Based | Prefix | Effort | total | grounded | trapped | ambiguous | grounded_answer_rate | trapped_answer_rate | 原生报告 |",
-            "|---|---|---|---|---|---|---:|---:|---:|---:|---:|---:|---|",
+            "| Model | Group | Input | Based | Prefix | Effort | total | grounded | trapped | ambiguous | grounded_answer_rate | trapped_answer_rate |",
+            "|---|---|---|---|---|---|---:|---:|---:|---:|---:|---:|",
         ])
         for record in summary["experiments"]:
             conflict = record["conflict"]
@@ -216,9 +167,7 @@ def build_report(summary: dict) -> str:
                       record["effort"], conflict["total"], labels["context_grounded"],
                       labels["knowledge_trapped"], labels["ambiguous_or_unjudgeable"],
                       conflict["grounded_answer_rate"], conflict["trapped_answer_rate"]]
-            links = native_link("JSON", record["native_summary_path"]) + " / " + native_link(
-                "Markdown", record["native_report_path"])
-            lines.append("| " + " | ".join(markdown_cell(value) for value in values) + f" | {links} |")
+            lines.append("| " + " | ".join(markdown_cell(value) for value in values) + " |")
     elif not summary["discovered_experiments"]:
         lines.append("未发现任何符合所选范围的 conflict 目标 QA 记录，汇总为空。")
     else:
@@ -237,13 +186,13 @@ def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--model", default="all", choices=("all", *MODELS),
                         type=lambda value: MODEL_ALIASES.get(value, value),
-                        help="all includes all ten cloud/local models; aliases: cosmos (cosmos3-nano), gemma.")
+                        help="all includes all eleven cloud/local models; aliases: cosmos (cosmos3-nano), gemma4/gemma (gemma4-31b).")
     parser.add_argument("--group", action="append", choices=GROUPS)
     parser.add_argument("--condition", action="append", choices=tuple(CONDITIONS))
     parser.add_argument("--dataset-dir", type=Path, default=Path("dataset/cases"))
     parser.add_argument("--summary-workers", type=int, default=4)
     parser.add_argument("--dry-run", action="store_true",
-                        help="Discover and print commands without API calls or report writes.")
+                        help="Discover and print experiments and efforts without report writes.")
     args = parser.parse_args()
     if args.summary_workers <= 0:
         parser.error("--summary-workers must be greater than zero")
@@ -259,34 +208,21 @@ def main() -> int:
               f"{sum(len(experiment.efforts) for experiment in experiments)}", flush=True)
         if args.dry_run:
             for experiment in experiments:
-                print(display_command(experiment.command(args)), flush=True)
+                print(experiment.label, flush=True)
             if not experiments:
                 print("No saved conflict QA experiments match the selection.")
             return 1 if failures else 0
 
         records = []
         succeeded = 0
-        env = {**os.environ, "PYTHONUTF8": "1", "PYTHONIOENCODING": "utf-8"}
         for index, experiment in enumerate(experiments, start=1):
-            command = experiment.command(args)
-            print(f"\n[{index}/{len(experiments)}] {display_command(command)}", flush=True)
-            phase = "summarize"
+            print(f"\n[{index}/{len(experiments)}] {experiment.label}", flush=True)
             try:
-                result = subprocess.run(command, cwd=PROJECT_ROOT, env=env, capture_output=True,
-                                        text=True, encoding="utf-8", errors="replace", check=False)
-                print(result.stdout, end="", flush=True)
-                print(result.stderr, end="", file=sys.stderr, flush=True)
-                if result.returncode:
-                    error = result.stderr.strip() or result.stdout.strip() or "Native summarize failed"
-                    failures.append({**experiment.identity(), "phase": phase,
-                                     "returncode": result.returncode, "error": error})
-                    continue
-                phase = "collect_reports"
-                current = collect_reports(experiment, result.stdout)
+                current = summarize_experiment(experiment, args)
                 records.extend(current)
                 succeeded += 1
-            except (PipelineError, OSError, ValueError, KeyError, TypeError) as exc:
-                failures.append({**experiment.identity(), "phase": phase, "error": str(exc)})
+            except Exception as exc:
+                failures.append({**experiment.identity(), "phase": "summarize", "error": str(exc)})
                 print(f"Failed: {exc}; continuing.", file=sys.stderr, flush=True)
         summary = {
             "generated_at": utc_now(), "dataset_dir": str(args.dataset_dir), "filter": "all",
@@ -297,10 +233,13 @@ def main() -> int:
             "experiments": records, "failures": failures,
         }
         report = build_report(summary)
-        atomic_write_json(OUTPUT_DIR / "summary.json", summary)
-        atomic_write_text(OUTPUT_DIR / "report.md", report)
-        print(f"\nWrote batch summary: {OUTPUT_DIR / 'summary.json'}")
-        print(f"Wrote batch report: {OUTPUT_DIR / 'report.md'}")
+        prefix = args.model.replace("-", "_").replace(".", "_")
+        summary_output = OUTPUT_DIR / f"{prefix}_summary.json"
+        report_output = OUTPUT_DIR / f"{prefix}_report.md"
+        atomic_write_json(summary_output, summary)
+        atomic_write_text(report_output, report)
+        print(f"\nWrote batch summary: {summary_output}")
+        print(f"Wrote batch report: {report_output}")
         print(f"Finished: {succeeded} experiments succeeded, {len(failures)} failures.")
         return 1 if failures else 0
     except (PipelineError, OSError, ValueError) as exc:

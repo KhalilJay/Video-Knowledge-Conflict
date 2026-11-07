@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import argparse
 from collections import Counter, defaultdict
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Iterable
 
@@ -49,6 +50,16 @@ class ReportIndex:
         if key not in self.decisions:
             self.decisions[key] = question_gate(case, video, question, model, effort)
         return self.decisions[key]
+
+
+@dataclass(frozen=True)
+class SummaryCollection:
+    paths: list[Path]
+    index: ReportIndex
+    based: bool
+    work_title_prefix: bool | None
+    filter_mode: str
+    summaries: dict[str | None, dict[str, Any]]
 
 
 def aggregate_video_verdict(verdicts: Iterable[str]) -> str:
@@ -644,7 +655,8 @@ def _fairy_video_prefix_name(args: argparse.Namespace) -> str | None:
     return "with_prefix" if args.with_work_title_prefix else "no_prefix"
 
 
-def command_summarize(args: argparse.Namespace) -> int:
+def collect_summaries(args: argparse.Namespace) -> SummaryCollection:
+    """Validate and summarize one case snapshot without writing report files."""
     from .runtime import (
         Runtime,
     )
@@ -672,46 +684,53 @@ def command_summarize(args: argparse.Namespace) -> int:
         paths, qa_model=args.qa_model, input_mode=args.input,
         work_title_prefix=work_title_prefix, based=based_condition, index=index,
     )
+    filter_mode = getattr(args, 'filter_mode', 'all')
+    summaries = {
+        effort: build_summary(
+            paths,
+            qa_model=args.qa_model,
+            input_mode=args.input,
+            effort=effort,
+            work_title_prefix=work_title_prefix,
+            based=based_condition,
+            filter_mode=filter_mode,
+            index=index,
+        )
+        for effort in efforts
+    }
+    return SummaryCollection(paths, index, based_condition, work_title_prefix, filter_mode, summaries)
+
+
+def command_summarize(args: argparse.Namespace) -> int:
+    collection = collect_summaries(args)
     model_slug = QA_MODEL_SLUGS[args.qa_model]
     result_dir = model_output_dir(grouped_dir(RESULTS_DIR, args.group), model_slug)
     prefix_name = _fairy_video_prefix_name(args)
-    filter_mode = getattr(args, 'filter_mode', 'all')
-    summaries = {}
     report_parts = [model_slug, args.input]
-    if based_condition:
+    if collection.based:
         report_parts.append('based')
     if prefix_name is not None:
         report_parts.append(prefix_name)
-    if filter_mode == 'passed':
+    if collection.filter_mode == 'passed':
         report_parts.append('filter_passed')
-    for effort in efforts:
+    for effort, summary in collection.summaries.items():
         output = result_dir / ('_'.join([*report_parts, _effort_name(effort), 'summary']) + '.json')
-        summaries[effort] = build_summary(
-                paths,
-                qa_model=args.qa_model,
-                input_mode=args.input,
-                effort=effort,
-                work_title_prefix=work_title_prefix,
-                based=based_condition,
-                filter_mode=filter_mode,
-                index=index,
-        )
-        atomic_write_json(output, summaries[effort])
+        atomic_write_json(output, summary)
         print(f"Wrote summary: {output}")
 
     report_output = result_dir / ("_".join(report_parts) + "_report.md")
     atomic_write_text(
         report_output,
         build_markdown(
-            paths,
+            collection.paths,
             qa_model=args.qa_model,
             input_mode=args.input,
-            efforts=set(efforts),
-            work_title_prefix=work_title_prefix,
-            based=based_condition,
-            filter_mode=filter_mode,
-            index=index,
-            summaries=summaries,
+            efforts=set(collection.summaries),
+            work_title_prefix=collection.work_title_prefix,
+            based=collection.based,
+            filter_mode=collection.filter_mode,
+            index=collection.index,
+            summaries=collection.summaries,
         ),
     )
     print(f"Wrote report: {report_output}")

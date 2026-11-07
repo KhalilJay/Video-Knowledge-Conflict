@@ -41,10 +41,10 @@ class WorkerConfig:
     qa_only: bool = False
     judge_only: bool = False
     max_token_log: Path | None = None
-    judge_concurrency: int = 24
-    judge_rpm: float = 20
-    openrouter_concurrency: int = 24
-    openrouter_rpm: float = 20
+    judge_concurrency: int = 32
+    judge_rpm: float = 60
+    openrouter_concurrency: int = 32
+    openrouter_rpm: float = 60
     timeout: int = 600
     max_retries: int = 4
     run_id: str | None = None

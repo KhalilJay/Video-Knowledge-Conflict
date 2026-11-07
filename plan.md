@@ -229,7 +229,8 @@ video/control 缺少 prefix 元数据时，须按 [pipeline.md](pipeline.md#历�
 | `kimi-k3` | `kimi-k3` | 有效 temperature 1；default 对应 reasoning max |
 | `cosmos3-nano` | `nvidia/Cosmos3-Nano` | temperature 0、seed 0；none/default |
 | `cosmos3-super` | `nvidia/Cosmos3-Super` | 与 Cosmos3-Nano 完全相同 |
-| `gemma4` | `google/gemma-4-31B-it` | temperature 0、seed 0；none/default |
+| `gemma4-31b` | `google/gemma-4-31B-it` | temperature 0、seed 0；none/default |
+| `gemma4-12b` | `google/gemma-4-12B-it` | 与 Gemma 4 31B 完全相同 |
 | `qwen3.8-27b` | `Qwen/Qwen3.8-27B` | temperature 0、seed 0；none/default，开启 thinking 时 reasoning effort 为 xhigh |
 | `qwen3-vl-32b-instruct` | `Qwen/Qwen3-VL-32B-Instruct` | temperature 0、seed 0；仅 none，视频 1 fps |
 | `qwen3-vl-32b-thinking` | `Qwen/Qwen3-VL-32B-Thinking` | temperature 0、seed 0；仅 default，视频 1 fps |
@@ -283,10 +284,22 @@ Cosmos `none` 保留原问题和 `Final answer:` 格式要求，不再添加
 屏蔽标签不保证没有推理文字，不额外修改输出或添加提示词。此变更不使历史结果自动
 失效；需要统一协议时使用 `--force-qa` 重跑所选范围。
 
+Gemma 4 31B/12B 共用 `GEMMA_BASE_URL`（默认端口 8001）、`--gemma-max-tokens` 和
+全部请求、预检、reasoning 保存、最终答案解析、一次 256-token 续写及截断日志逻辑。
+两个模型均固定 temperature=0、seed=0、none/default effort、8192 总输出预算、
+6144 thinking 预算和 1 FPS，无固定帧数上限；下文 Gemma 均指两者。
+直接 pipeline 的 QA/共享服务默认并发为 4/4、RPM 为 0；run_all 为 32/32、RPM 为 0。
+批量执行须显式选择 `gemma4-31b` 或 `gemma4-12b`，`--model all` 仍仅运行四个云端模型；
+summarize all 包含两者，分别发现已有 none/default 结果。旧 `gemma4`、`gemma` 名称
+兼容映射到 `gemma4-31b`，31B 的持久化模型 ID 与原报告目录 `gemma` 保持不变，
+12B 使用独立模型 ID 和 `gemma4_12b` 目录。续跑、判分和 question-only 筛选按模型 ID
+隔离，历史数据无需迁移。两个模型共用 `scripts/start_gemma4_vllm.sh --model <模型ID>`，
+默认 31B；切换权重前须停止当前服务。
+
 Gemma 通过 `chat_template_kwargs.enable_thinking`
 显式控制推理；回答正文与可选 reasoning 分开保存，final_answer 仅从正文提取。
 Qwen27B 同样显式设置 `chat_template_kwargs.enable_thinking`，开启时在该对象内设置
-`reasoning_effort=xhigh`，正文和 reasoning 分开保存。六个本地模型的默认总输出预算
+`reasoning_effort=xhigh`，正文和 reasoning 分开保存。七个本地模型的默认总输出预算
 统一为 `max_tokens=8192`，保留各模型的 `--*-max-tokens` 覆盖参数。
 Gemma 客户端默认由 2048 调整到 8192，Qwen27B 由 32768 调整到 8192，修正客户端
 与默认服务端上限不一致的问题；Qwen27B 服务默认上下文仍为 65536。

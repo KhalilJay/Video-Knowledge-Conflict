@@ -182,7 +182,8 @@ QA 及其中的 Judge 历史；保留其他视频的历史、共享问题及其 
 | `kimi-k3` | `default` | 24 / 24 | 服务配置 |
 | `cosmos3-nano` | `none`、`default` | 8 / 8 | `--cosmos-max-tokens 8192` |
 | `cosmos3-super` | `none`、`default` | 8 / 8 | `--cosmos-max-tokens 8192` |
-| `gemma4` | `none`、`default` | 4 / 4 | `--gemma-max-tokens 8192` |
+| `gemma4-31b` | `none`、`default` | 4 / 4 | `--gemma-max-tokens 8192` |
+| `gemma4-12b` | `none`、`default` | 4 / 4 | `--gemma-max-tokens 8192` |
 | `qwen3.8-27b` | `none`、`default` | 1 / 1 | `--qwen38-max-tokens 8192` |
 | `qwen3-vl-32b-instruct` | 仅 `none` | 1 / 1 | `--qwen3-vl-max-tokens 8192` |
 | `qwen3-vl-32b-thinking` | 仅 `default` | 1 / 1 | `--qwen3-vl-max-tokens 8192` |
@@ -217,13 +218,19 @@ Cosmos3-Nano 和 Cosmos3-Super 共用 `COSMOS_BASE_URL`、`--cosmos-max-tokens` 
 全部采样、thinking 和恢复参数；下文 Cosmos 指两者。持久化模型 ID 分别为
 `nvidia/Cosmos3-Nano` 和 `nvidia/Cosmos3-Super`，结果与筛选身份独立。
 
+Gemma 4 的规范名称为 `gemma4-31b`、`gemma4-12b`；旧 `gemma4` 和 `gemma` 均映射到
+31B。持久化模型 ID 分别为 `google/gemma-4-31B-it`、`google/gemma-4-12B-it`，
+续跑、判分和 question-only 筛选按 ID 隔离。两者共用 `GEMMA_BASE_URL`、
+`--gemma-max-tokens`、预检、reasoning 保存、最终答案解析、一次 256-token 续写和
+截断日志。除模型身份外，四种输入的生成参数与处理流程完全相同；下文 Gemma 指两者。
+
 Cosmos `none` 在四种输入的请求顶层发送
 `"bad_words": ["<think>", "</think>"]`，由服务端在生成阶段屏蔽标签；提示词仅保留
 原问题、适用的输入条件和 `Final answer:` 格式要求，移除原有不使用 think 标签的
 提示句。屏蔽标签不保证没有推理文字。`default` 保持原推理提示且不发送 `bad_words`。
 历史结果仍可复用；需要采用新协议重新实验时，使用现有 `--force-qa`。
 
-六个本地模型默认总输出预算为 8192（含推理和正文），默认
+七个本地模型默认总输出预算为 8192（含推理和正文），默认
 `--thinking-token-budget 6144`。该正整数参数仅在本地实际 effort 为 `default` 时作为
 顶层 `thinking_token_budget` 发送，并须严格小于所选模型的 `--*-max-tokens`；
 `none` 不发送，`all` 按每个任务的 effort 处理，云端模型忽略该预算。
@@ -236,7 +243,9 @@ Qwen27B 从 32768 调整到 8192，与默认服务端输出上限一致。
 bash scripts/start_cosmos_nano_vllm.sh
 # 切换至 Super：先停止 Nano 服务，再启动以下脚本；二者默认均使用端口 8000
 bash scripts/start_cosmos_super_vllm.sh
-bash scripts/start_gemma4_vllm.sh
+bash scripts/start_gemma4_vllm.sh --model google/gemma-4-31B-it
+# 切换 12B 前先停止当前 Gemma 服务；两者默认共用端口 8001
+bash scripts/start_gemma4_vllm.sh --model google/gemma-4-12B-it
 bash scripts/start_qwen38_vllm.sh
 # Qwen3-VL 默认 Instruct；与 Thinking 共用端口 8003，切换前先停止当前服务
 bash scripts/start_qwen3_vl_vllm.sh
@@ -270,7 +279,10 @@ Cosmos 默认激活 `vllm` 环境、GPU 0 单卡、BF16、端口 8000、`MAX_NUM
 
 Gemma 默认 `vllm` 环境、GPU 1 单卡（`CUDA_VISIBLE_DEVICES=1`、`TENSOR_PARALLEL_SIZE=1`）、
 BF16、32K 上下文、`MAX_NUM_SEQS=2`、
-端口 8001。`GEMMA_MODEL`、`GEMMA_REVISION`、`GEMMA_CONDA_ENV` 可覆盖模型和环境；
+端口 8001，默认启动 31B。`--model MODEL` 或 `--model=MODEL` 优先于 `GEMMA_MODEL`，
+其余参数透传给 vLLM；默认服务名随模型变化，可用 `GEMMA_SERVED_MODEL_NAME` 或
+`--served-model-name` 显式覆盖。31B 默认保留固定 revision，12B 使用仓库默认版本，
+均可用 `GEMMA_REVISION` 覆盖；`GEMMA_CONDA_ENV` 可覆盖环境。
 其余部署参数与 Cosmos 同名，另支持 `MAX_MODEL_LEN`、`MEDIA_ROOT` 和 `TEXT_ONLY=1`。
 
 Qwen27B 默认 `vllm` 环境、GPU 0 单卡、BF16、65536 上下文、`MAX_NUM_SEQS=1`、
@@ -310,7 +322,9 @@ Description 和 question-only 请求不携带视频采样参数。完整参数�
 
 ```bash
 python scripts/pipeline.py qa-judge --group classic_fairy_tale_film_conflicts \
-  --input video --qa-model gemma4 --thinking-effort all
+  --input video --qa-model gemma4-31b --thinking-effort all
+python scripts/pipeline.py qa-judge --group real_world_commonsense_conflicts \
+  --input video --qa-model gemma4-12b --thinking-effort all
 python scripts/pipeline.py qa-judge --group classic_fairy_tale_film_conflicts \
   --input description --qa-model qwen3.8-max --thinking-effort all
 python scripts/pipeline.py qa-judge --group real_world_commonsense_conflicts \
@@ -434,6 +448,8 @@ python scripts/run_all/run_qa_judge.py --dry-run
 python scripts/run_all/run_qa_judge.py
 python scripts/run_all/run_qa_judge.py --model gemini-3.1-pro
 python scripts/run_all/run_qa_judge.py --model gemini-4-argon --dry-run
+python scripts/run_all/run_qa_judge.py --model gemma4-31b --dry-run
+python scripts/run_all/run_qa_judge.py --model gemma4-12b --dry-run
 python scripts/run_all/run_qa_judge.py --model qwen3-vl-32b-instruct --dry-run
 python scripts/run_all/run_qa_judge.py --model qwen3-vl-32b-thinking --dry-run
 ```
@@ -445,14 +461,17 @@ python scripts/run_all/run_qa_judge.py --model qwen3-vl-32b-thinking --dry-run
 保留模型、effort 和 Fairy video 的作品名前缀设置：Qwen Max 使用 all effort，
 Gemini 3.1 Pro、Argon、Kimi 使用 default。也可用 `--model` 选择单个云端或本地模型；本地模型使用
 all effort，Qwen3-VL Instruct 例外使用 none、Thinking 使用 default，各执行一次。
-Qwen3-VL 不加入 QA 批量入口的 `--model all`，须手动切换服务后显式选择。
+Gemma 31B/12B 和 Qwen3-VL 不加入 QA 批量入口的 `--model all`，须手动切换服务后显式选择。
+旧 `--model gemma4` 和 `--model gemma` 均解析为 `gemma4-31b`，新命令、运行 ID 和
+批量配置键使用完整名称；两种 Gemma 执行相同组、条件及 none/default 两档 effort。
 `--group`、`--condition` 可重复指定。
 
 批量脚本固定读取同目录的 `run_all_qa_judge_config.json`；调整并发、RPM、超时或
-网络重试次数时直接修改该文件，不支持外部配置路径。配置必须包含全部十个模型及
+网络重试次数时直接修改该文件，不支持外部配置路径。配置必须包含全部十一个模型及
 规定字段，缺失、未知字段或无效数值直接报错，不自动补齐模型。
 仓库自带配置将 Judge、OpenRouter 和所有共享 QA 服务并发设为 32；QA 任务并发除
 Cosmos3-Super 为 4 外均为 32，两个 Qwen3-VL 模型沿用 Qwen27B 的 32 / 32 配置。
+`gemma4-31b` 和 `gemma4-12b` 均为 32 / 32、RPM 为 0。
 云端 QA、Judge 和 OpenRouter 为 60 RPM，本地 QA 为 0 RPM，`max_retries` 为 3。
 这些批量配置不改变直接运行 `pipeline.py qa-judge` 时的默认值和命令行参数。
 
@@ -481,7 +500,7 @@ summary 判断；历史空日志文件不清理。云端批量运行保持原有
 
 ```bash
 python scripts/pipeline.py qa-judge --group real_world_commonsense_conflicts \
-  --input description --qa-model gemma4 --thinking-effort all \
+  --input description --qa-model gemma4-31b --thinking-effort all \
   --max-token-log results/truncated_gemma.jsonl
 ```
 
@@ -522,41 +541,49 @@ Cosmos 从正文中的 `<think>…</think>` 提取推理，来源标为 `content
 ```bash
 python scripts/run_all/run_all_summarize.py
 python scripts/run_all/run_all_summarize.py --dry-run
+python scripts/run_all/run_all_summarize.py --model gemma4-12b --dry-run
 ```
 
 该脚本扫描四个 group（含 math）中 conflict 视频已保存的目标 QA，覆盖 video、
 video + based、description、description + based；Fairy video 只选择有作品名前缀的
 记录。未产生目标 QA 的组合跳过，支持部分完成的实验。`--model all` 为默认值，
 在此汇总入口中包含 Gemini 3.1 Pro、Gemini 4 Argon、Qwen Max、Kimi、Cosmos3-Nano、
-Cosmos3-Super、Gemma、Qwen27B、Qwen3-VL Instruct/Thinking 全部十个模型。
-Qwen Max 和原有四个本地模型分别发现 none/default，Qwen3-VL Instruct 仅发现 none、
+Cosmos3-Super、Gemma 4 31B/12B、Qwen27B、Qwen3-VL Instruct/Thinking 全部十一个模型。
+Qwen Max、Cosmos Nano/Super、Gemma 31B/12B 和 Qwen27B 分别发现 none/default，Qwen3-VL Instruct 仅发现 none、
 Thinking 仅发现 default；两者结果独立。Gemini 3.1 Pro 的历史 medium
 归一化为 default；Argon 仅发现 default，与 Gemini 3.1 Pro 的结果独立。
-每个组合仅将实际保存过 QA 的 effort 显式传给原生 summarize。
+每个组合仅汇总实际保存过 QA 的 effort。
 
-支持 `--model`（含 `cosmos` → `cosmos3-nano`、`gemma` 别名）、可重复的 `--group` / `--condition`、
+支持 `--model`（含 `cosmos` → `cosmos3-nano`、`gemma4`/`gemma` → `gemma4-31b` 别名）、可重复的 `--group` / `--condition`、
 `--dataset-dir` 和 `--summary-workers`（默认 4）。相对数据路径以仓库根目录为基准。
-`--dry-run` 只展示发现的组合及命令，不写报告、不调用模型。实际汇总也只处理已有
+`--dry-run` 只展示发现的实验组合及 effort，不写报告、不调用模型。实际汇总也只处理已有
 记录，不执行 QA/Judge 请求。使用自定义数据目录时，输出仍写入仓库的 results 目录。
 
-每个模型/组/条件调用一次原生 `summarize`，不传 `--filter passed`，采用默认
-`filter=all`。新鲜度、有效判定和指标计算均沿用原生逻辑，各 effort JSON 和合并
-Markdown 继续保存在 `results/<group>/<model>/`。已有目标 QA 但没有有效已判定答案的实验也
-保留，计数为零、rate 为 null。
+每个模型/组/条件直接调用原生汇总共用的内存接口，固定 `filter=all`，复用快照、
+校验、effort 选择、新鲜度、有效判定和指标计算逻辑。批量入口不启动逐实验子进程，
+不生成或回读单实验 JSON/Markdown。已有目标 QA 但没有有效已判定答案的实验也保留，
+计数为零、rate 为 null。独立 `pipeline.py summarize` 仍按原规则生成单实验报告。
 
 批量汇总统计全部有效已判定目标（含 ambiguous），不依赖 question-only 是否存在
 或通过，也不会补跑模型。需要筛选报告时手动使用原生 `summarize --filter passed`。
 
-额外原子写入并替换 `results/run_all/summary.json` 和 `results/run_all/report.md`。
-前者每个实验/effort 一条记录，将本次原生 JSON 的 `answers.conflict` 原样保存为
-`conflict`，附带模型、组、输入、based、prefix、effort、filter 和原生报告路径；
-后者以表格展示 total、三类 label 数量、grounded_answer_rate、trapped_answer_rate，
-并链接原生 JSON/Markdown；实验身份、JSON 元数据和报告标题均标记 `filter=all`。
-不同实验之间不合并计数或平均比例。
+每次只在 `results/run_all/` 原子写入并替换两份带模型名的总表：
 
-只读取本次成功调用明确生成的报告。单个实验失败后继续其余实验，汇总列出失败
-信息并最终非零退出，失败任务不会拿旧报告替代。未发现任何实验时生成明确的空
-结果。每次运行替换总汇总，因此指定子集时总汇总仅包含本次选择的范围。
+- 单模型使用规范 CLI 名，将 `-` 和 `.` 替换为 `_`；别名先归一化。例如
+  `--model gemma4-12b` 输出 `gemma4_12b_summary.json` 和 `gemma4_12b_report.md`，
+  `--model gemma` 输出 `gemma4_31b_summary.json` 和 `gemma4_31b_report.md`。
+- `--model all`（含默认情况）输出 `all_summary.json` 和 `all_report.md`。
+
+JSON 每个实验/effort 一条记录，将内存汇总的 `answers.conflict` 原样保存为
+`conflict`，附带模型、组、输入、based、prefix、effort 和 filter，不含单实验报告路径；
+Markdown 以表格展示 total、三类 label 数量、grounded_answer_rate、trapped_answer_rate，
+保留失败信息，不含单实验报告链接列。实验身份、JSON 元数据和报告标题均标记
+`filter=all`，不同实验之间不合并计数或平均比例。
+
+只收集本次成功计算的结果。单个实验失败后继续其余实验，汇总列出失败信息并最终
+非零退出，失败任务不会拿旧报告替代。未发现任何实验时仍生成两份明确的空总表。
+不同模型的总表独立保存，同一模型再次运行时覆盖对应两份文件，指定子集时仅包含
+本次选择的范围。历史总表和单实验报告不自动删除。
 
 ### 单个实验汇总
 
@@ -587,7 +614,7 @@ effort 通过的题目集合可能不同。缺失、过期、未判分或判错�
 默认 effort 的空 summary（Qwen3-VL Instruct 为 none，其余模型为 default）。
 每个 effort 一份 JSON，不同 effort 合并到一份 Markdown。模型目录名为
 `gemini3_1_pro`、`gemini4_argon`、`qwen`、`kimi`、`cosmos_nano`、`cosmos_super`、
-`gemma`、`qwen38_27b`、`qwen3_vl_32b_instruct`、`qwen3_vl_32b_thinking`。
+`gemma`（31B，保留历史目录）、`gemma4_12b`、`qwen38_27b`、`qwen3_vl_32b_instruct`、`qwen3_vl_32b_thinking`。
 Nano 的旧 `cosmos` 命令别名仍接受；若已有组结果仅含 `cosmos/`，继续在该目录写入
 完整名称的报告；新建结果使用 `cosmos_nano/`。两种目录同时存在时报错，程序不自动合并或搬迁。
 已有 `gemini` 报告目录保留，重新汇总 Gemini 3.1 Pro 时写入新目录和文件名前缀。例如：

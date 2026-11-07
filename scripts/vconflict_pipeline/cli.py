@@ -41,7 +41,7 @@ from .settings import (
     DEFAULT_SOURCE_CASE_DIR,
     DEFAULT_THINKING_TOKEN_BUDGET,
     FAIRY_TALE_GROUP,
-    GEMMA_QA_MODEL,
+    GEMMA_QA_MODELS,
     QWEN38_QA_MODEL,
     QWEN3_VL_QA_MODELS,
     SEEDANCE_MODEL,
@@ -214,6 +214,7 @@ def build_parser() -> argparse.ArgumentParser:
             if model == DEFAULT_QA_MODEL
         ),
         metavar="{" + ",".join(CLI_QA_MODELS) + "}",
+        help="Aliases: cosmos (cosmos3-nano), gemma4/gemma (gemma4-31b).",
     )
     _add_input(qa_judge)
     qa_judge.add_argument("--qa-concurrency", type=int)
@@ -253,6 +254,7 @@ def build_parser() -> argparse.ArgumentParser:
         type=_qa_model,
         required=True,
         metavar="{" + ",".join(CLI_QA_MODELS) + "}",
+        help="Aliases: cosmos (cosmos3-nano), gemma4/gemma (gemma4-31b).",
     )
     _add_input(summarize)
     _add_thinking_effort(summarize)
@@ -286,7 +288,7 @@ def _validate(args: argparse.Namespace, parser: argparse.ArgumentParser) -> None
     if args.command == "qa-judge":
         concurrency = {
             **{model: DEFAULT_COSMOS_WORKERS for model in COSMOS_QA_MODELS},
-            GEMMA_QA_MODEL: DEFAULT_GEMMA_WORKERS,
+            **{model: DEFAULT_GEMMA_WORKERS for model in GEMMA_QA_MODELS},
             QWEN38_QA_MODEL: DEFAULT_QWEN38_WORKERS,
             **{model: DEFAULT_QWEN3_VL_WORKERS for model in QWEN3_VL_QA_MODELS},
         }.get(args.qa_model, 24)
@@ -295,7 +297,7 @@ def _validate(args: argparse.Namespace, parser: argparse.ArgumentParser) -> None
         if args.qa_service_concurrency is None:
             args.qa_service_concurrency = concurrency
         if args.qa_rpm is None:
-            local_models = (*COSMOS_QA_MODELS, GEMMA_QA_MODEL, QWEN38_QA_MODEL, *QWEN3_VL_QA_MODELS)
+            local_models = (*COSMOS_QA_MODELS, *GEMMA_QA_MODELS, QWEN38_QA_MODEL, *QWEN3_VL_QA_MODELS)
             args.qa_rpm = 0 if args.qa_model in local_models else 20
     if getattr(args, "audit_only", False) and (args.force or args.repair_variant_context):
         parser.error("--audit-only cannot be combined with --force or --repair-variant-context")

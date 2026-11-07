@@ -3,10 +3,42 @@ set -euo pipefail
 
 # 默认复用 vllm 环境：GPU 1 单卡 A100 80GB，BF16，32K 上下文，端口 8001。
 # 只查看命令：DRY_RUN=1 bash scripts/start_gemma4_vllm.sh
+# 切换 12B：bash scripts/start_gemma4_vllm.sh --model google/gemma-4-12B-it
 # 双卡示例：CUDA_VISIBLE_DEVICES=0,1 TENSOR_PARALLEL_SIZE=2 bash scripts/start_gemma4_vllm.sh
 
 script_dir="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd -P)"
 repo_root="$(cd -- "$script_dir/.." && pwd -P)"
+
+GEMMA_MODEL="${GEMMA_MODEL:-google/gemma-4-31B-it}"
+forwarded_args=()
+while (($#)); do
+  case "$1" in
+    --model)
+      if (($# < 2)) || [[ -z "$2" || "$2" == -* ]]; then
+        echo "--model 需要非空模型 ID 或本地路径。" >&2
+        exit 1
+      fi
+      GEMMA_MODEL="$2"
+      shift 2
+      ;;
+    --model=*)
+      GEMMA_MODEL="${1#--model=}"
+      if [[ -z "$GEMMA_MODEL" ]]; then
+        echo "--model 需要非空模型 ID 或本地路径。" >&2
+        exit 1
+      fi
+      shift
+      ;;
+    --)
+      forwarded_args+=("$@")
+      break
+      ;;
+    *)
+      forwarded_args+=("$1")
+      shift
+      ;;
+  esac
+done
 
 if ! command -v conda >/dev/null 2>&1; then
   echo "找不到 conda；请先将 Conda 的 bin 目录加入 PATH。" >&2
@@ -23,7 +55,6 @@ export LD_LIBRARY_PATH="$CONDA_PREFIX/lib${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
 export VLLM_USE_FLASHINFER_SAMPLER="${VLLM_USE_FLASHINFER_SAMPLER:-0}"
 export CUDA_VISIBLE_DEVICES="${CUDA_VISIBLE_DEVICES:-1}"
 
-GEMMA_MODEL="${GEMMA_MODEL:-google/gemma-4-31B-it}"
 TENSOR_PARALLEL_SIZE="${TENSOR_PARALLEL_SIZE:-1}"
 MAX_MODEL_LEN="${MAX_MODEL_LEN:-32768}"
 MAX_NUM_SEQS="${MAX_NUM_SEQS:-2}"
@@ -38,7 +69,7 @@ VLLM_PORT="${VLLM_PORT:-8001}"
 
 cmd=(
   "$CONDA_PREFIX/bin/vllm" serve "$GEMMA_MODEL"
-  --served-model-name google/gemma-4-31B-it
+  --served-model-name "${GEMMA_SERVED_MODEL_NAME:-$GEMMA_MODEL}"
   --tensor-parallel-size "$TENSOR_PARALLEL_SIZE"
   --dtype bfloat16
   --override-generation-config "{\"max_new_tokens\":$MAX_OUTPUT_TOKENS}"
@@ -52,7 +83,7 @@ cmd=(
   --host "$VLLM_HOST" --port "$VLLM_PORT"
 )
 
-# 官方仓库固定到本次核对的版本；本地目录默认不加 revision。
+# 31B 保留原固定版本；12B 和本地目录默认不加 revision。
 if [[ "$GEMMA_MODEL" == "google/gemma-4-31B-it" ]]; then
   cmd+=(--revision "${GEMMA_REVISION:-842da3794eaa0b77d5f08bae87a17459d91ff475}")
 elif [[ -n "${GEMMA_REVISION:-}" ]]; then
@@ -77,7 +108,7 @@ else
 fi
 
 # 追加参数可以覆盖 vLLM 的同名标量参数。
-cmd+=("$@")
+cmd+=("${forwarded_args[@]}")
 if [[ "${DRY_RUN:-0}" == "1" ]]; then
   printf 'CUDA_VISIBLE_DEVICES=%q HF_HOME=%q LD_LIBRARY_PATH=%q VLLM_USE_FLASHINFER_SAMPLER=%q ' \
     "$CUDA_VISIBLE_DEVICES" "$HF_HOME" "$LD_LIBRARY_PATH" "$VLLM_USE_FLASHINFER_SAMPLER"
