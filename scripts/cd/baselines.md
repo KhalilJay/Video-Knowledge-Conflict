@@ -10,12 +10,15 @@ thinking 控制、计时、batch 调度与结果保存。
 使用主实验的离线环境：`transformers==5.18.0`、`vllm==0.29.0`、PyTorch、
 torchvision、OpenCV 和 Pillow。模型标识与缓存解析方式见 [VCD](vcd/vcd.md#环境与模型)。
 需要 Judge 时设置 `OPENROUTER_API_KEY`。
+Cosmos3-Nano 与 Cosmos3-Super 共用 Cosmos 加载、提示词、采样、解码和续写逻辑，
+分别使用 `nvidia/Cosmos3-Nano`、`nvidia/Cosmos3-Super` 及各自的离线模型缓存。
 
 | 模型 | VCD 视频 / TCD 正分支 / SEASON 原视频 | TCD 负分支 |
 |---|---:|---:|
 | qwen | 1 fps | 0.5 fps |
 | gemma | 1 fps | 0.5 fps |
 | cosmos3-nano | 4 fps | 1 fps |
+| cosmos3-super | 4 fps | 1 fps |
 
 采样值集中定义于 `contrastive_common/sampling.py`，预处理、配置预览与指纹读取同一份
 配置。`--positive-fps` 已移除，不能再统一覆盖所有模型。
@@ -31,13 +34,17 @@ QA 的 `sampling` 审计记录各分支请求 FPS、源 FPS、原始帧索引、
 ## 独立入口
 
 ```bash
-python scripts/cd/tcd/run.py --models qwen cosmos3-nano gemma --gpus all --based
-python scripts/cd/season/run.py --models qwen cosmos3-nano gemma --gpus all --based
+python scripts/cd/tcd/run.py --models qwen cosmos3-nano gemma cosmos3-super --gpus all --based
+python scripts/cd/season/run.py --models qwen cosmos3-nano gemma cosmos3-super --gpus all --based
+
+# Super 单独预览
+python scripts/cd/tcd/run.py --models cosmos3-super --dry-run
+python scripts/cd/season/run.py --models cosmos3-super --dry-run
 ```
 
-每个入口固定对应方法，不接受切换方法。`--models` 选择 1–3 个不同模型。
+每个入口固定对应方法，不接受切换方法。`--models` 选择 1–4 个不同模型。
 Nano 的旧别名 `cosmos`、旧结果目录及指纹仍兼容；命名与 VCD 一致。
-Cosmos3-Super 本次仅接入主 pipeline 和 VCD，不在 TCD/SEASON 可选模型中。
+Nano 和 Super 可同时选择，结果目录各自独立；`cosmos` 与 `cosmos3-nano` 同选会报重复模型。
 默认 `batch-size=auto`、`max-batch-size=32`、based 关闭、执行 QA → Judge。
 输出分别为 `results/tcd/<model>/` 和 `results/season/<model>/`；`--output` 覆盖方法结果根目录。
 数据筛选、Judge 参数及生成预算与 [VCD](vcd/vcd.md#单次运行) 相同。
@@ -45,12 +52,14 @@ Cosmos3-Super 本次仅接入主 pipeline 和 VCD，不在 TCD/SEASON 可选模�
 ## 统一 baseline 入口
 
 ```bash
-# 默认：三个模型、两种方法、batch 4、上限 4、based、QA-only
+# 默认：四个模型、两种方法，共 8 个任务；batch 4、上限 4、based、QA-only
 python scripts/cd/run_baselines.py --dry-run
 python scripts/cd/run_baselines.py
 
 # 显式选择模型、方法和参数
 python scripts/cd/run_baselines.py --models cosmos3-nano --methods tcd --gpus 1 --no-based
+python scripts/cd/run_baselines.py --models cosmos3-super --dry-run
+python scripts/cd/run_baselines.py --models cosmos3-nano cosmos3-super --dry-run
 
 # 运行 QA 与 Judge；或单独补 Judge / 重建报告
 python scripts/cd/run_baselines.py --qa-judge
@@ -64,11 +73,13 @@ python scripts/cd/run_baselines.py --batch-size auto --max-batch-size 32 --autot
 统一入口直接构造 worker 配置，使用与独立入口相同的参数解析、校验和 FIFO GPU 队列，
 不拼接 shell 命令。默认输出为 `results/baselines/<method>/<model>/`；
 `--output` 覆盖包含方法目录的父目录。模型顺序优先，再按方法顺序排队。
+Super 的结果分别位于 `results/baselines/tcd/cosmos3-super/` 和
+`results/baselines/season/cosmos3-super/`。VCD 批次的默认模型仍为 `qwen cosmos3-nano gemma`。
 默认 GPU 0、1，每卡同时一个 worker；其他任务等待空闲卡。单卡参数为 `--gpus 0` 或 `1`。
 
 | 参数 | 默认值 / 行为 |
 |---|---|
-| `--models` | baseline 默认 `qwen cosmos3-nano gemma`；独立入口必填 |
+| `--models` | baseline 默认 `qwen cosmos3-nano gemma cosmos3-super`；独立入口必填 |
 | `--methods` | 仅 baseline 支持，默认 `tcd season` |
 | `--batch-size` / `--max-batch-size` | baseline 为 `4` / `4`；独立入口为 `auto` / `32` |
 | `--based` / `--no-based` | baseline 默认开启；独立入口默认关闭 |
@@ -88,6 +99,9 @@ baseline 默认 QA-only，使用 `--force-judge` 时须显式指定 `--qa-judge`
 
 TCD 沿用 `(1 + alpha) * positive_logits - alpha * negative_logits` 和 beta plausibility mask；
 SEASON 沿用原始三分支加权公式和空间噪声 / 时间同质化参数。
+Nano/Super 使用相同默认参数：BF16、贪心解码、模型随机种子 0、`alpha=1.0`、
+`beta=0.1`；SEASON 另用 `season_beta=0.33`、`noise_step=10`、`noise_seed=42`。
+两者首次输出预算均为 8192 tokens，thinking 预算均为 6144 tokens，沿用已有参数覆盖方式。
 `alpha=0` 跳过负分支和干预、对比及 beta mask，保留单原始视频分支。
 VCD 使用独立串行解码，batch 注册表与入口仅接受 TCD/SEASON。
 TCD/SEASON 按视觉几何分桶、左 padding 后组成真正的 tensor batch。

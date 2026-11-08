@@ -17,10 +17,11 @@ from .models import DEFAULT_MODELS, canonical_model
 from .storage import atomic_json, make_config, read_json
 
 
-def add_queue_options(parser, *, required_models=False, model_choices=DEFAULT_MODELS):
+def add_queue_options(parser, *, required_models=False, model_choices=DEFAULT_MODELS,
+                      default_models=DEFAULT_MODELS):
     parser.add_argument('--models', nargs='+', type=canonical_model, choices=model_choices,
                         required=required_models,
-                        default=None if required_models else list(DEFAULT_MODELS),
+                        default=None if required_models else list(default_models),
                         help=f'One to {len(model_choices)} distinct models, queued in the given order; '
                              'legacy alias cosmos means cosmos3-nano')
     parser.add_argument('--gpus', choices=('0', '1', 'all'), default='all',

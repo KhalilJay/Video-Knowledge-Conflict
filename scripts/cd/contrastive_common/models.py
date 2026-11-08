@@ -10,6 +10,7 @@ from vconflict_pipeline.settings import (
 
 DEFAULT_MODELS = ('qwen', 'cosmos3-nano', 'gemma')
 VCD_MODELS = (*DEFAULT_MODELS, 'cosmos3-super')
+BASELINE_MODELS = (*DEFAULT_MODELS, 'cosmos3-super')
 MODELS = {'cosmos3-nano': COSMOS_NANO_QA_MODEL, 'cosmos3-super': COSMOS_SUPER_QA_MODEL,
           'gemma': GEMMA_QA_MODEL, 'qwen': QWEN38_QA_MODEL}
 REVISIONS = {'cosmos3-nano': 'main', 'cosmos3-super': 'main', 'qwen': 'main',

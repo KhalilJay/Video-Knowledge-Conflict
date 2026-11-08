@@ -14,7 +14,7 @@ from vconflict_pipeline.qa import validate_thinking_token_budget
 from vconflict_pipeline.settings import DEFAULT_CASE_DIR, PROJECT_ROOT
 from .core import validate_parameters
 from .config import from_arguments
-from .models import DEFAULT_MODELS, VCD_MODELS
+from .models import BASELINE_MODELS, DEFAULT_MODELS, VCD_MODELS
 from .launcher import (
     add_queue_options, gpu_indices, load_status, new_run, preflight, preview, supervise,
     validate_models, validate_root,
@@ -31,7 +31,8 @@ def parser(method='cd', *, baseline=False):
                      f'{"VCD" if method == "cd" else method.upper()} aligned with the main QA/Judge protocol.'),
         allow_abbrev=False)
     add_queue_options(result, required_models=not baseline,
-                      model_choices=VCD_MODELS if method == 'cd' and not baseline else DEFAULT_MODELS)
+                      model_choices=VCD_MODELS if method == 'cd' and not baseline else BASELINE_MODELS,
+                      default_models=BASELINE_MODELS if baseline else DEFAULT_MODELS)
     if baseline:
         result.add_argument('--methods', nargs='+', choices=('tcd', 'season'), default=['tcd', 'season'])
     elif method == 'cd':
@@ -177,7 +178,7 @@ def main(argv=None, *, method='cd', baseline=False):
     args.summarize_only = args.mode == 'summarize'
     try:
         validate_models(args.models,
-                        model_choices=VCD_MODELS if method == 'cd' and not baseline else DEFAULT_MODELS)
+                        model_choices=VCD_MODELS if method == 'cd' and not baseline else BASELINE_MODELS)
         if len(set(args.methods)) != len(args.methods):
             raise ValueError('--methods cannot contain duplicates')
         if not baseline and args.methods != [method]:
