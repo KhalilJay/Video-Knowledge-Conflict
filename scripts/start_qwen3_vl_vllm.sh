@@ -1,11 +1,14 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# Qwen3-VL-32B：默认 Instruct，单张 A100 80GB，BF16，16K，端口 8003。
+# Qwen3-VL 8B/32B：默认 32B Instruct，BF16，16K，端口 8003。
 # 启动：bash scripts/start_qwen3_vl_vllm.sh
 # 换卡：CUDA_VISIBLE_DEVICES=1 bash scripts/start_qwen3_vl_vllm.sh
 # Thinking：QWEN_MODEL=Qwen/Qwen3-VL-32B-Thinking bash scripts/start_qwen3_vl_vllm.sh
-# 本地目录须指定版本：QWEN_MODEL=/实际模型目录 QWEN_VARIANT=thinking bash scripts/start_qwen3_vl_vllm.sh
+# 8B Instruct：QWEN_MODEL=Qwen/Qwen3-VL-8B-Instruct bash scripts/start_qwen3_vl_vllm.sh
+# 8B Thinking：QWEN_MODEL=Qwen/Qwen3-VL-8B-Thinking bash scripts/start_qwen3_vl_vllm.sh
+# 本地 8B：QWEN_MODEL=/实际模型目录 QWEN_VARIANT=thinking QWEN_SIZE=8B bash scripts/start_qwen3_vl_vllm.sh
+# 本地目录须指定 variant，省略 QWEN_SIZE 时按 32B 处理，兼容旧命令。
 # 只打印命令：DRY_RUN=1 bash scripts/start_qwen3_vl_vllm.sh
 # 默认沿用视频输入（每条请求最多一个视频，1 fps）；TEXT_ONLY=1 关闭视觉模块。
 # 图片输入可追加：--limit-mm-per-prompt '{"image":1,"video":1,"audio":0}'
@@ -15,10 +18,14 @@ repo_root="$(cd -- "$script_dir/.." && pwd -P)"
 
 QWEN_MODEL="${QWEN_MODEL:-Qwen/Qwen3-VL-32B-Instruct}"
 QWEN_VARIANT="${QWEN_VARIANT:-}"
+QWEN_SIZE="${QWEN_SIZE:-}"
 detected_variant=""
+detected_size=""
 case "$QWEN_MODEL" in
-  Qwen/Qwen3-VL-32B-Instruct) detected_variant=instruct ;;
-  Qwen/Qwen3-VL-32B-Thinking) detected_variant=thinking ;;
+  Qwen/Qwen3-VL-32B-Instruct) detected_variant=instruct; detected_size=32B ;;
+  Qwen/Qwen3-VL-32B-Thinking) detected_variant=thinking; detected_size=32B ;;
+  Qwen/Qwen3-VL-8B-Instruct) detected_variant=instruct; detected_size=8B ;;
+  Qwen/Qwen3-VL-8B-Thinking) detected_variant=thinking; detected_size=8B ;;
   *)
     if [[ -z "$QWEN_VARIANT" ]]; then
       echo "无法识别 QWEN_MODEL 版本；自定义模型目录须设置 QWEN_VARIANT=instruct 或 thinking。" >&2
@@ -30,10 +37,22 @@ if [[ -n "$detected_variant" && -n "$QWEN_VARIANT" && "$QWEN_VARIANT" != "$detec
   echo "QWEN_VARIANT=$QWEN_VARIANT 与 QWEN_MODEL=$QWEN_MODEL 冲突。" >&2
   exit 1
 fi
+if [[ -n "$detected_size" && -n "$QWEN_SIZE" && "$QWEN_SIZE" != "$detected_size" ]]; then
+  echo "QWEN_SIZE=$QWEN_SIZE 与 QWEN_MODEL=$QWEN_MODEL 冲突。" >&2
+  exit 1
+fi
 QWEN_VARIANT="${QWEN_VARIANT:-$detected_variant}"
+QWEN_SIZE="${QWEN_SIZE:-${detected_size:-32B}}"
+case "$QWEN_SIZE" in
+  8B|32B) ;;
+  *)
+    echo "QWEN_SIZE 必须是 8B 或 32B。" >&2
+    exit 1
+    ;;
+esac
 case "$QWEN_VARIANT" in
-  instruct) served_model_id=Qwen/Qwen3-VL-32B-Instruct ;;
-  thinking) served_model_id=Qwen/Qwen3-VL-32B-Thinking ;;
+  instruct) served_model_id="Qwen/Qwen3-VL-$QWEN_SIZE-Instruct" ;;
+  thinking) served_model_id="Qwen/Qwen3-VL-$QWEN_SIZE-Thinking" ;;
   *)
     echo "QWEN_VARIANT 必须是 instruct 或 thinking。" >&2
     exit 1
@@ -43,7 +62,7 @@ esac
 for argument in "$@"; do
   case "$argument" in
     --served-model-name|--served-model-name=*)
-      echo "--served-model-name 由 QWEN_MODEL/QWEN_VARIANT 固定，不能覆盖。" >&2
+      echo "--served-model-name 由 QWEN_MODEL/QWEN_VARIANT/QWEN_SIZE 固定，不能覆盖。" >&2
       exit 1
       ;;
   esac

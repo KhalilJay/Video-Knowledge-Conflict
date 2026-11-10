@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Run a QA/Judge model matrix; default to the four cloud models."""
+"""Run a QA/Judge model matrix with one effort per model; default to four cloud models."""
 from __future__ import annotations
 
 import argparse
@@ -21,8 +21,10 @@ RUNNER_DIR = Path(__file__).resolve().parent
 sys.path.insert(0, str(RUNNER_DIR.parent))
 
 from vconflict_pipeline.settings import (
+    CLI_QA_MODEL_IDS,
     FAIRY_TALE_GROUP,
     PROJECT_ROOT,
+    QWEN3_VL_INSTRUCT_QA_MODELS,
 )
 
 
@@ -30,6 +32,7 @@ CLOSED_MODELS = ("gemini-3.1-pro", "gemini-4-argon", "qwen3.8-max", "kimi-k3")
 LOCAL_MODELS = (
     "cosmos3-nano", "cosmos3-super", "gemma4-31b", "gemma4-12b", "qwen3.8-27b",
     "qwen3-vl-32b-instruct", "qwen3-vl-32b-thinking",
+    "qwen3-vl-8b-instruct", "qwen3-vl-8b-thinking",
 )
 MODELS = (*CLOSED_MODELS, *LOCAL_MODELS)
 MODEL_ALIASES = {
@@ -46,6 +49,11 @@ CONDITIONS = {
     "video-based": ("video", True),
     "description": ("description", False),
     "description-based": ("description", True),
+}
+DEFAULT_CONDITIONS = ("video-based", "description")
+ADDITIONAL_CONDITIONS = {
+    "question_only": ("question_only", False),
+    "control": ("control", True),
 }
 SHARED_FIELDS = (
     "judge_concurrency", "judge_rpm", "openrouter_concurrency",
@@ -97,20 +105,22 @@ def build_plan(args: argparse.Namespace, config: dict,
                max_token_log: Path | None = None) -> list[tuple[str, list[str]]]:
     models = CLOSED_MODELS if args.model == "all" else (args.model,)
     groups = tuple(dict.fromkeys(args.group or GROUPS))
-    conditions = tuple(dict.fromkeys(args.condition or CONDITIONS))
+    # Keep CONDITIONS shared with the historical-result summarizer unchanged.
+    defaults = () if args.include_control_and_question_only else DEFAULT_CONDITIONS
+    conditions = {condition: CONDITIONS[condition]
+                  for condition in args.condition or defaults}
+    if args.include_control_and_question_only:
+        conditions.update(ADDITIONAL_CONDITIONS)
     plan = []
     for model in models:
-        if model == "qwen3-vl-32b-instruct":
+        if CLI_QA_MODEL_IDS[model] in QWEN3_VL_INSTRUCT_QA_MODELS:
             effort = "none"
-        elif model == "qwen3-vl-32b-thinking":
-            effort = "default"
         else:
-            effort = "all" if model == "qwen3.8-max" or model in LOCAL_MODELS else "default"
+            effort = "default"
         limits = {field: config[field] for field in SHARED_FIELDS}
         limits.update(config["models"][model])
         for group in groups:
-            for condition in conditions:
-                input_mode, based = CONDITIONS[condition]
+            for condition, (input_mode, based) in conditions.items():
                 command = [
                     sys.executable, "-u", str(PROJECT_ROOT / "scripts" / "pipeline.py"),
                     "qa-judge", "--dataset-dir", str(args.dataset_dir),
@@ -118,7 +128,7 @@ def build_plan(args: argparse.Namespace, config: dict,
                     "--thinking-effort", effort,
                     "--video-scope", "all",
                 ]
-                if group == FAIRY_TALE_GROUP and input_mode == "video":
+                if group == FAIRY_TALE_GROUP and input_mode in ("video", "control"):
                     command.append("--with-work-title-prefix")
                 if based:
                     command.append("--based")
@@ -242,11 +252,13 @@ def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--model", default="all", choices=("all", *MODELS),
                         type=lambda value: MODEL_ALIASES.get(value, value),
-                        help="Default: all (Gemini 3.1 Pro, Gemini 4 Argon, Qwen Max, Kimi); aliases: cosmos (cosmos3-nano), gemma4/gemma (gemma4-31b).")
+                        help="Default: all (Gemini 3.1 Pro, Gemini 4 Argon, Qwen Max, Kimi); local models, including Qwen3-VL 8B/32B, require explicit selection. Effort: default (Qwen3-VL Instruct: none). Aliases: cosmos (cosmos3-nano), gemma4/gemma (gemma4-31b).")
     parser.add_argument("--group", action="append", choices=GROUPS,
                         help="Repeat to select groups; default: all four groups, including math.")
     parser.add_argument("--condition", action="append", choices=tuple(CONDITIONS),
-                        help="Repeat to select conditions; default: all four conditions.")
+                        help="Repeat to select conditions; default without --include-control-and-question-only: video-based and description.")
+    parser.add_argument("--include-control-and-question-only", action="store_true",
+                        help="Run only question_only (without based) and control (with based), or append them to explicitly selected --condition values; Fairy control includes the work-title prefix.")
     parser.add_argument("--dataset-dir", type=Path, default=Path("dataset/cases"))
     parser.add_argument("--log-dir", type=Path, default=Path("results/run_all"),
                         help="Parent directory for run summaries and local-model max_token/ logs.")

@@ -186,7 +186,7 @@ def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--model", default="all", choices=("all", *MODELS),
                         type=lambda value: MODEL_ALIASES.get(value, value),
-                        help="all includes all eleven cloud/local models; aliases: cosmos (cosmos3-nano), gemma4/gemma (gemma4-31b).")
+                        help="all includes all thirteen cloud/local models, including Qwen3-VL 8B/32B Instruct/Thinking; aliases: cosmos (cosmos3-nano), gemma4/gemma (gemma4-31b).")
     parser.add_argument("--group", action="append", choices=GROUPS)
     parser.add_argument("--condition", action="append", choices=tuple(CONDITIONS))
     parser.add_argument("--dataset-dir", type=Path, default=Path("dataset/cases"))

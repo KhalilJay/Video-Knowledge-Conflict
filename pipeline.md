@@ -187,15 +187,20 @@ QA 及其中的 Judge 历史；保留其他视频的历史、共享问题及其 
 | `qwen3.8-27b` | `none`、`default` | 1 / 1 | `--qwen38-max-tokens 8192` |
 | `qwen3-vl-32b-instruct` | 仅 `none` | 1 / 1 | `--qwen3-vl-max-tokens 8192` |
 | `qwen3-vl-32b-thinking` | 仅 `default` | 1 / 1 | `--qwen3-vl-max-tokens 8192` |
+| `qwen3-vl-8b-instruct` | 仅 `none` | 1 / 1 | `--qwen3-vl-max-tokens 8192` |
+| `qwen3-vl-8b-thinking` | 仅 `default` | 1 / 1 | `--qwen3-vl-max-tokens 8192` |
 
 省略 effort 时 Qwen3-VL Instruct 使用 `none`，其余模型使用 `default`；
-`all` 执行模型支持的全部 effort，也可重复指定该选项。两个 Qwen3-VL 模型的
+`all` 执行模型支持的全部 effort，也可重复指定该选项。四个 Qwen3-VL 模型的
 `all` 各执行一次，显式选择不支持的 effort 报错。
 模型 ID、温度和视频采样协议见 [plan.md](plan.md#模型配置与采样协议)。
 
-Qwen3-VL 两个模型的准确持久化 ID 为 `Qwen/Qwen3-VL-32B-Instruct` 和
+Qwen3-VL 32B 的准确持久化 ID 为 `Qwen/Qwen3-VL-32B-Instruct` 和
 `Qwen/Qwen3-VL-32B-Thinking`，报告目录分别为 `qwen3_vl_32b_instruct` 和
-`qwen3_vl_32b_thinking`。两者固定 temperature=0、seed=0，视频 1 fps；使用 user
+`qwen3_vl_32b_thinking`；8B 为 `Qwen/Qwen3-VL-8B-Instruct` 和
+`Qwen/Qwen3-VL-8B-Thinking`，目录分别为 `qwen3_vl_8b_instruct` 和
+`qwen3_vl_8b_thinking`。8B 与对应 32B 版本共用全部实验配置，结果、续跑、判分及
+question-only 筛选按模型 ID 隔离。四者固定 temperature=0、seed=0，视频 1 fps；使用 user
 消息，不额外添加 system prompt，保留原问题、based、作品名前缀和 `Final answer:`
 要求。首次请求不发送 `enable_thinking`、`reasoning_effort=xhigh` 或人为思考格式
 指令；Thinking 的[官方模板](https://huggingface.co/Qwen/Qwen3-VL-32B-Thinking/blob/main/chat_template.json)
@@ -230,7 +235,7 @@ Cosmos `none` 在四种输入的请求顶层发送
 提示句。屏蔽标签不保证没有推理文字。`default` 保持原推理提示且不发送 `bad_words`。
 历史结果仍可复用；需要采用新协议重新实验时，使用现有 `--force-qa`。
 
-七个本地模型默认总输出预算为 8192（含推理和正文），默认
+九个本地模型默认总输出预算为 8192（含推理和正文），默认
 `--thinking-token-budget 6144`。该正整数参数仅在本地实际 effort 为 `default` 时作为
 顶层 `thinking_token_budget` 发送，并须严格小于所选模型的 `--*-max-tokens`；
 `none` 不发送，`all` 按每个任务的 effort 处理，云端模型忽略该预算。
@@ -247,11 +252,14 @@ bash scripts/start_gemma4_vllm.sh --model google/gemma-4-31B-it
 # 切换 12B 前先停止当前 Gemma 服务；两者默认共用端口 8001
 bash scripts/start_gemma4_vllm.sh --model google/gemma-4-12B-it
 bash scripts/start_qwen38_vllm.sh
-# Qwen3-VL 默认 Instruct；与 Thinking 共用端口 8003，切换前先停止当前服务
+# Qwen3-VL 默认 32B Instruct；8B/32B 共用端口 8003，切换前先停止当前服务
 bash scripts/start_qwen3_vl_vllm.sh
 QWEN_MODEL=Qwen/Qwen3-VL-32B-Thinking bash scripts/start_qwen3_vl_vllm.sh
-# 自定义本地目录必须显式标明版本
+QWEN_MODEL=Qwen/Qwen3-VL-8B-Instruct bash scripts/start_qwen3_vl_vllm.sh
+QWEN_MODEL=Qwen/Qwen3-VL-8B-Thinking bash scripts/start_qwen3_vl_vllm.sh
+# 本地路径必须指定 variant；QWEN_SIZE 省略时默认 32B，对外使用对应官方 ID
 QWEN_MODEL=/实际模型目录 QWEN_VARIANT=thinking bash scripts/start_qwen3_vl_vllm.sh
+QWEN_MODEL=/实际8B模型目录 QWEN_VARIANT=thinking QWEN_SIZE=8B bash scripts/start_qwen3_vl_vllm.sh
 # Gemma 仅查看启动命令
 DRY_RUN=1 bash scripts/start_gemma4_vllm.sh
 # Qwen27B dry-run 无需激活 Conda 或安装 vLLM
@@ -295,8 +303,9 @@ Qwen27B 默认 `vllm` 环境、GPU 0 单卡、BF16、65536 上下文、`MAX_NUM_
 
 Qwen3-VL 默认 `vllm` 环境、GPU 0 单卡、BF16、16384 上下文、`MAX_NUM_SEQS=32`、
 输出上限 8192、端口 8003，沿用 Qwen27B 的部署覆盖项和 HF 缓存设置。
-标准 `QWEN_MODEL` ID 自动识别 Instruct/Thinking；自定义路径必须设置
-`QWEN_VARIANT=instruct|thinking`，未知版本或与标准 ID 冲突时直接报错。
+四个标准 `QWEN_MODEL` ID 自动识别 8B/32B 和 Instruct/Thinking；自定义路径必须设置
+`QWEN_VARIANT=instruct|thinking`，用 `QWEN_SIZE=8B|32B` 指定尺寸，省略时默认 32B。
+未知版本、无效尺寸或显式配置与标准 ID 冲突时直接报错。
 对外服务名固定为对应官方 ID，不能通过追加 `--served-model-name` 覆盖。
 Thinking 自动加入 `--reasoning-parser qwen3` 及 `<think>` / `</think>` 边界；
 Instruct 不加入 parser，两者均不在服务端设置 thinking 模式开关。
@@ -310,9 +319,9 @@ Qwen3-VL 共用端口 8003，由用户手动切换权重；预检要求 `/v1/mod
 其他本地模型的原有预检行为保持不变。
 Description 与独立 question-only 实验都只用文本，`TEXT_ONLY=1` 同时适用于二者。
 
-Gemma、本地 Qwen27B、两个 Qwen3-VL 和云端 Qwen Max 的 video/control 均按 1 FPS 采样。
+Gemma、本地 Qwen27B、四个 Qwen3-VL 和云端 Qwen Max 的 video/control 均按 1 FPS 采样。
 Gemma 客户端与启动脚本设置 `media_io_kwargs.video.fps=1`、`num_frames=-1`，
-由加载器采样一次，取消固定 32 帧上限；本地 Qwen27B 和两个 Qwen3-VL 加载器使用
+由加载器采样一次，取消固定 32 帧上限；本地 Qwen27B 和四个 Qwen3-VL 加载器使用
 `opencv/num_frames=-1/fps=-1` 保留原始帧，
 客户端与启动脚本设置 `mm_processor_kwargs.fps=1`，由模型处理器采样一次，
 并设置 `do_sample_frames=true`，保留原有帧数边界；Qwen Max 视频内容项设置 `fps=1`。
@@ -445,6 +454,7 @@ video/control QA 需按真实条件补成 true/false，或 `--force-qa` 替换�
 
 ```bash
 python scripts/run_all/run_qa_judge.py --dry-run
+python scripts/run_all/run_qa_judge.py --include-control-and-question-only --dry-run
 python scripts/run_all/run_qa_judge.py
 python scripts/run_all/run_qa_judge.py --model gemini-3.1-pro
 python scripts/run_all/run_qa_judge.py --model gemini-4-argon --dry-run
@@ -452,25 +462,35 @@ python scripts/run_all/run_qa_judge.py --model gemma4-31b --dry-run
 python scripts/run_all/run_qa_judge.py --model gemma4-12b --dry-run
 python scripts/run_all/run_qa_judge.py --model qwen3-vl-32b-instruct --dry-run
 python scripts/run_all/run_qa_judge.py --model qwen3-vl-32b-thinking --dry-run
+python scripts/run_all/run_qa_judge.py --model qwen3-vl-8b-instruct --dry-run
+python scripts/run_all/run_qa_judge.py --model qwen3-vl-8b-thinking --dry-run
 ```
 
 统一使用 `run_qa_judge.py`，省略 `--model` 等同于 `--model all`。
 默认四个云端模型（Gemini 3.1 Pro、Gemini 4 Argon、Qwen Max、Kimi）依次运行四个 group（含 math），
-每组执行 `video`、`video-based`、`description`、`description-based`，共 64 条命令；
-单独选择 Argon 默认生成 16 条命令，不包含 control 或 question_only。
-保留模型、effort 和 Fairy video 的作品名前缀设置：Qwen Max 使用 all effort，
-Gemini 3.1 Pro、Argon、Kimi 使用 default。也可用 `--model` 选择单个云端或本地模型；本地模型使用
-all effort，Qwen3-VL Instruct 例外使用 none、Thinking 使用 default，各执行一次。
-Gemma 31B/12B 和 Qwen3-VL 不加入 QA 批量入口的 `--model all`，须手动切换服务后显式选择。
+每组执行 `video-based` 和不加 based 的 `description`，共 32 条命令；
+单独选择 Argon 默认生成 8 条命令。`--condition` 可重复指定，显式选择时覆盖默认条件，
+仍支持 `video`、`video-based`、`description`、`description-based` 四项，重复项只运行一次。
+单独加 `--include-control-and-question-only` 时，仅运行不加 based 的 `question_only`
+和加 based 的 `control`，默认四模型、四组共生成 32 条命令。
+同时显式指定 `--condition` 时，会在所选条件后追加这两项。例如加
+`--condition video-based --condition description --include-control-and-question-only`
+会运行四种条件，默认四模型、四组共生成 64 条命令。
+Fairy 的 video/control 均加作品名前缀，question_only 不加。
+
+每个模型只执行一种 effort：Qwen3-VL 8B/32B Instruct 使用 none，其余云端和本地模型
+均使用 default。可用 `--model` 选择单个模型；所有本地模型都须手动切换服务后显式选择，
+不加入 QA 批量入口的 `--model all`。
 旧 `--model gemma4` 和 `--model gemma` 均解析为 `gemma4-31b`，新命令、运行 ID 和
-批量配置键使用完整名称；两种 Gemma 执行相同组、条件及 none/default 两档 effort。
-`--group`、`--condition` 可重复指定。
+批量配置键使用完整名称；两种 Gemma 执行相同组、条件及 default effort。
+`--group` 可重复指定。以上运行默认值不影响批量汇总入口：它仍发现原有四种 conflict
+条件、全部已保存 effort 和全部十三个模型，不汇总 control 或 question_only。
 
 批量脚本固定读取同目录的 `run_all_qa_judge_config.json`；调整并发、RPM、超时或
-网络重试次数时直接修改该文件，不支持外部配置路径。配置必须包含全部十一个模型及
+网络重试次数时直接修改该文件，不支持外部配置路径。配置必须包含全部十三个模型及
 规定字段，缺失、未知字段或无效数值直接报错，不自动补齐模型。
 仓库自带配置将 Judge、OpenRouter 和所有共享 QA 服务并发设为 32；QA 任务并发除
-Cosmos3-Super 为 4 外均为 32，两个 Qwen3-VL 模型沿用 Qwen27B 的 32 / 32 配置。
+Cosmos3-Super 为 4 外均为 32，四个 Qwen3-VL 模型沿用 Qwen27B 的 32 / 32 配置。
 `gemma4-31b` 和 `gemma4-12b` 均为 32 / 32、RPM 为 0。
 云端 QA、Judge 和 OpenRouter 为 60 RPM，本地 QA 为 0 RPM，`max_retries` 为 3。
 这些批量配置不改变直接运行 `pipeline.py qa-judge` 时的默认值和命令行参数。
@@ -487,7 +507,7 @@ Summary 不保存逐 case 进度、回答、判定、逐命令日志、配置快
 
 #### 保存本地模型的截断回答
 
-选择任一本地模型（含两个 Qwen3-VL 模型）时，每次批量运行指定
+选择任一本地模型（含四个 Qwen3-VL 模型）时，每次批量运行指定
 `results/run_all/max_token/<本次运行ID>.jsonl`，运行 ID 与该次 summary 的目录名
 相同。指定 `--log-dir` 时使用其下的 `max_token/`。同次运行的全部 group、condition
 和 effort 共用这一绝对路径，下一次运行使用新文件；启动时在终端和 summary 中
@@ -542,15 +562,17 @@ Cosmos 从正文中的 `<think>…</think>` 提取推理，来源标为 `content
 python scripts/run_all/run_all_summarize.py
 python scripts/run_all/run_all_summarize.py --dry-run
 python scripts/run_all/run_all_summarize.py --model gemma4-12b --dry-run
+python scripts/run_all/run_all_summarize.py --model qwen3-vl-8b-instruct --dry-run
+python scripts/run_all/run_all_summarize.py --model qwen3-vl-8b-thinking --dry-run
 ```
 
 该脚本扫描四个 group（含 math）中 conflict 视频已保存的目标 QA，覆盖 video、
 video + based、description、description + based；Fairy video 只选择有作品名前缀的
 记录。未产生目标 QA 的组合跳过，支持部分完成的实验。`--model all` 为默认值，
 在此汇总入口中包含 Gemini 3.1 Pro、Gemini 4 Argon、Qwen Max、Kimi、Cosmos3-Nano、
-Cosmos3-Super、Gemma 4 31B/12B、Qwen27B、Qwen3-VL Instruct/Thinking 全部十一个模型。
+Cosmos3-Super、Gemma 4 31B/12B、Qwen27B、Qwen3-VL 8B/32B Instruct/Thinking 全部十三个模型。
 Qwen Max、Cosmos Nano/Super、Gemma 31B/12B 和 Qwen27B 分别发现 none/default，Qwen3-VL Instruct 仅发现 none、
-Thinking 仅发现 default；两者结果独立。Gemini 3.1 Pro 的历史 medium
+Thinking 仅发现 default；四者结果独立。Gemini 3.1 Pro 的历史 medium
 归一化为 default；Argon 仅发现 default，与 Gemini 3.1 Pro 的结果独立。
 每个组合仅汇总实际保存过 QA 的 effort。
 
@@ -614,7 +636,8 @@ effort 通过的题目集合可能不同。缺失、过期、未判分或判错�
 默认 effort 的空 summary（Qwen3-VL Instruct 为 none，其余模型为 default）。
 每个 effort 一份 JSON，不同 effort 合并到一份 Markdown。模型目录名为
 `gemini3_1_pro`、`gemini4_argon`、`qwen`、`kimi`、`cosmos_nano`、`cosmos_super`、
-`gemma`（31B，保留历史目录）、`gemma4_12b`、`qwen38_27b`、`qwen3_vl_32b_instruct`、`qwen3_vl_32b_thinking`。
+`gemma`（31B，保留历史目录）、`gemma4_12b`、`qwen38_27b`、`qwen3_vl_32b_instruct`、`qwen3_vl_32b_thinking`、
+`qwen3_vl_8b_instruct`、`qwen3_vl_8b_thinking`。
 Nano 的旧 `cosmos` 命令别名仍接受；若已有组结果仅含 `cosmos/`，继续在该目录写入
 完整名称的报告；新建结果使用 `cosmos_nano/`。两种目录同时存在时报错，程序不自动合并或搬迁。
 已有 `gemini` 报告目录保留，重新汇总 Gemini 3.1 Pro 时写入新目录和文件名前缀。例如：
@@ -686,9 +709,9 @@ reasoning 按 `reasoning`、`reasoning_content` 顺序选择非空字段，原�
 前缀。请求设置 `continue_final_message=true`、`add_generation_prompt=false`、
 `echo=false`、`max_tokens=256`，保留原采样、thinking 开关及媒体参数，移除
 `thinking_token_budget`。不裁剪输入或首次回答，上下文不足直接报告服务端错误。
-仅 Qwen3-VL Thinking 的续写增加 `chat_template_kwargs.enable_thinking=false`：
+仅 Qwen3-VL 8B/32B Thinking 的续写增加 `chat_template_kwargs.enable_thinking=false`：
 已验证 vLLM 0.29.0 默认 parser 会将纯答案后缀放入 reasoning，此参数使其进入
-content。该模型官方模板不读取该参数，续写模板保持不变；它是解析兼容处理，
+content。两者官方模板不读取该参数，续写模板保持不变；它是解析兼容处理，
 不是关闭模型思考或禁止标签。Instruct 和已有模型均不增加这一兼容参数。
 
 将预填的 assistant 正文和实际返回后缀原样拼接，再按末行规则提取 `final_answer`。

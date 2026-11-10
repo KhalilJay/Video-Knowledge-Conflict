@@ -13,8 +13,8 @@ from .settings import (
     KIMI_QA_MODEL,
     QWEN_QA_MODEL,
     QWEN38_QA_MODEL,
-    QWEN3_VL_INSTRUCT_QA_MODEL,
-    QWEN3_VL_THINKING_QA_MODEL,
+    QWEN3_VL_INSTRUCT_QA_MODELS,
+    QWEN3_VL_THINKING_QA_MODELS,
     QWEN3_VL_QA_MODELS,
 )
 
@@ -69,8 +69,8 @@ QA_THINKING_EFFORTS = {
     **{model: (None, "default") for model in COSMOS_QA_MODELS},
     **{model: (None, "default") for model in GEMMA_QA_MODELS},
     QWEN38_QA_MODEL: (None, "default"),
-    QWEN3_VL_INSTRUCT_QA_MODEL: (None,),
-    QWEN3_VL_THINKING_QA_MODEL: ("default",),
+    **{model: (None,) for model in QWEN3_VL_INSTRUCT_QA_MODELS},
+    **{model: ("default",) for model in QWEN3_VL_THINKING_QA_MODELS},
 }
 DEFAULT_THINKING_EFFORT = "default"
 

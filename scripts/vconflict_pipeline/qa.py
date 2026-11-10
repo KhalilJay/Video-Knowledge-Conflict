@@ -36,7 +36,7 @@ from .settings import (
     QWEN_QA_MODEL,
     QWEN38_QA_MODEL,
     QWEN3_VL_QA_MODELS,
-    QWEN3_VL_THINKING_QA_MODEL,
+    QWEN3_VL_THINKING_QA_MODELS,
 )
 from .transport import (
     EmptyResponseTextError,
@@ -114,7 +114,7 @@ def prepare_final_answer_continuation(
     payload.update(continue_final_message=True, add_generation_prompt=False,
                    echo=False, max_tokens=FINAL_ANSWER_CONTINUATION_MAX_TOKENS)
     payload.pop("thinking_token_budget", None)
-    if qa_model == QWEN3_VL_THINKING_QA_MODEL:
+    if qa_model in QWEN3_VL_THINKING_QA_MODELS:
         # vLLM 0.29.0 otherwise parses the pure answer suffix as reasoning.
         # Qwen3-VL Thinking's fixed template ignores this parser-only hint.
         payload.setdefault("chat_template_kwargs", {})["enable_thinking"] = False
@@ -745,7 +745,7 @@ def _qwen3_vl_payload(
         "stream": False,
         "messages": [{"role": "user", "content": content}],
     }
-    if served_model_id == QWEN3_VL_THINKING_QA_MODEL:
+    if served_model_id in QWEN3_VL_THINKING_QA_MODELS:
         validate_thinking_token_budget(thinking_token_budget, max_tokens)
         payload["thinking_token_budget"] = thinking_token_budget
     if video_uri is not None:
@@ -1105,7 +1105,7 @@ def run_qa_once(
         result["effective_reasoning_effort"] = backend.effective_reasoning_effort
     if qa_model == QWEN38_QA_MODEL and thinking_effort == "default":
         result["effective_reasoning_effort"] = "xhigh"
-    if qa_model in (*GEMMA_QA_MODELS, QWEN38_QA_MODEL, QWEN3_VL_THINKING_QA_MODEL):
+    if qa_model in (*GEMMA_QA_MODELS, QWEN38_QA_MODEL, *QWEN3_VL_THINKING_QA_MODELS):
         message = response["choices"][0]["message"]
         for field in ("reasoning", "reasoning_content"):
             reasoning = message.get(field)

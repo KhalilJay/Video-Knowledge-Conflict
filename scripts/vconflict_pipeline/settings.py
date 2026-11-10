@@ -22,12 +22,17 @@ GEMMA_QA_MODELS = (GEMMA_QA_MODEL, GEMMA_12B_QA_MODEL)
 QWEN38_QA_MODEL = "Qwen/Qwen3.8-27B"
 QWEN3_VL_INSTRUCT_QA_MODEL = "Qwen/Qwen3-VL-32B-Instruct"
 QWEN3_VL_THINKING_QA_MODEL = "Qwen/Qwen3-VL-32B-Thinking"
-QWEN3_VL_QA_MODELS = (QWEN3_VL_INSTRUCT_QA_MODEL, QWEN3_VL_THINKING_QA_MODEL)
+QWEN3_VL_8B_INSTRUCT_QA_MODEL = "Qwen/Qwen3-VL-8B-Instruct"
+QWEN3_VL_8B_THINKING_QA_MODEL = "Qwen/Qwen3-VL-8B-Thinking"
+QWEN3_VL_INSTRUCT_QA_MODELS = (QWEN3_VL_INSTRUCT_QA_MODEL, QWEN3_VL_8B_INSTRUCT_QA_MODEL)
+QWEN3_VL_THINKING_QA_MODELS = (QWEN3_VL_THINKING_QA_MODEL, QWEN3_VL_8B_THINKING_QA_MODEL)
+QWEN3_VL_QA_MODELS = (*QWEN3_VL_INSTRUCT_QA_MODELS, *QWEN3_VL_THINKING_QA_MODELS)
 DEFAULT_QA_MODEL = GEMINI_QA_MODEL
 CLI_QA_MODELS = (
     "gemini-3.1-pro", "gemini-4-argon", QWEN_QA_MODEL, KIMI_QA_MODEL,
     "cosmos3-nano", "cosmos3-super", "gemma4-31b", "gemma4-12b", "qwen3.8-27b",
     "qwen3-vl-32b-instruct", "qwen3-vl-32b-thinking",
+    "qwen3-vl-8b-instruct", "qwen3-vl-8b-thinking",
 )
 CLI_QA_MODEL_IDS = {
     "gemini-3.1-pro": GEMINI_QA_MODEL,
@@ -43,6 +48,8 @@ CLI_QA_MODEL_IDS = {
     "qwen3.8-27b": QWEN38_QA_MODEL,
     "qwen3-vl-32b-instruct": QWEN3_VL_INSTRUCT_QA_MODEL,
     "qwen3-vl-32b-thinking": QWEN3_VL_THINKING_QA_MODEL,
+    "qwen3-vl-8b-instruct": QWEN3_VL_8B_INSTRUCT_QA_MODEL,
+    "qwen3-vl-8b-thinking": QWEN3_VL_8B_THINKING_QA_MODEL,
 }
 QA_MODEL_SLUGS = {
     GEMINI_QA_MODEL: "gemini3_1_pro",
@@ -56,6 +63,8 @@ QA_MODEL_SLUGS = {
     QWEN38_QA_MODEL: "qwen38_27b",
     QWEN3_VL_INSTRUCT_QA_MODEL: "qwen3_vl_32b_instruct",
     QWEN3_VL_THINKING_QA_MODEL: "qwen3_vl_32b_thinking",
+    QWEN3_VL_8B_INSTRUCT_QA_MODEL: "qwen3_vl_8b_instruct",
+    QWEN3_VL_8B_THINKING_QA_MODEL: "qwen3_vl_8b_thinking",
 }
 CLI_THINKING_EFFORTS = ("none", "default")
 FAIRY_TALE_GROUP = "classic_fairy_tale_film_conflicts"
